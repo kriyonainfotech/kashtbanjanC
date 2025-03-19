@@ -28,19 +28,18 @@ const app = express();
 
 // Middleware
 app.use(express.json());
-
-app.use(express.json()); // For parsing JSON bodies
-app.use(express.urlencoded({ extended: true })); // For parsing URL-encoded bodies
+app.use(express.urlencoded({ extended: true }));
 
 // Connect to Database
 connectDB();
 
-// Basic Route
+// API Routes
 app.use("/api", require("./routes/indexRoute"));
 
-// Start Server
-
-const PORT = 4000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+// Root Route
+app.get("/", (req, res) => {
+  res.send("Welcome to the API 🚀");
 });
+
+// Export the app for Vercel
+module.exports = app;
