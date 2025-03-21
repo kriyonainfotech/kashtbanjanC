@@ -1,35 +1,25 @@
 const mongoose = require("mongoose");
 
-const stockSchema = new mongoose.Schema({
-  type: {
-    type: String,
-    enum: ["purchase", "sell"],
-    required: true,
-  }, // "purchase" or "sell"
+const stockSchema = new mongoose.Schema(
+  {
+    subCategory: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "SubCategory",
+      required: true,
+    }, // Links to the SubCategory
 
-  subCategory: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "SubCategory",
-    required: true,
-  }, // Links to the SubCategory
+    quantity: { type: Number, required: true }, // Number of items
 
-  category: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Category",
-    required: true,
-  }, // Links to MainCategory
+    OnRent: { type: Number, default: 0 },
 
-  quantity: { type: Number, required: true }, // Number of items purchased/sold
-
-  pricePerItem: { type: Number, required: true }, // Price per item
-
-  createdAt: { type: Date, default: Date.now },
-});
+    pricePerItem: { type: Number, required: true }, // Price per item
+  },
+  { timestamps: true }
+);
 
 // ✅ Indexes for faster queries
 stockSchema.index({ subCategory: 1 });
-// stockSchema.index({ category: 1 });
-// stockSchema.index({ createdAt: -1 });
+
 
 const Stock = mongoose.model(
   "Stock",

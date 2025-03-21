@@ -1,6 +1,15 @@
 const express = require("express");
-const router = express.Router();
+const {
+  addStock,
+  deleteStock,
+  editStock,
+  getStockBySubCategory,
+} = require("../controllers/stockController");
+const routes = express.Router();
 
-router.post("/getstock")
+routes.post("/add", addStock);
+routes.delete("/delete", deleteStock);
+routes.post("/edit", editStock);
+routes.post("/bySubcategory", getStockBySubCategory);
 
-module.exports = router;
+module.exports = routes;
