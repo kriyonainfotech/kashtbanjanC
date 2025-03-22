@@ -168,3 +168,93 @@ exports.editSite = async (req, res) => {
     });
   }
 };
+
+// exports.getSiteHistory = async (req, res) => {
+//   try {
+//     const { siteId } = req.body;
+//     console.log(`📌 Fetching history for site: ${siteId}`);
+
+//     const site = await Site.findById(siteId)
+//       .select("history")
+//       .populate("history.order history.customer");
+
+//     if (!site) {
+//       console.log(`⚠️ Site not found: ${siteId}`);
+//       return res.status(404).json({
+//         success: false,
+//         message: "Site not found",
+//       });
+//     }
+
+//     console.log(`✅ Successfully fetched history for site: ${siteId}`);
+//     res.status(200).json({
+//       success: true,
+//       history: site.history,
+//     });
+//   } catch (error) {
+//     console.error("❌ Error fetching site history:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Internal server error",
+//     });
+//   }
+// };
+
+exports.getSiteHistory = async (req, res) => {
+  try {
+    const { siteId } = req.body;
+    console.log(`📌 Fetching history for site: ${siteId}`);
+
+    const site = await Site.findById(siteId)
+      .select("history")
+      .populate({
+        path: "history.order",
+        populate: {
+          path: "items.subCategory",
+          select: "name",
+        },
+      });
+
+    if (!site) {
+      console.log(`⚠️ Site not found: ${siteId}`);
+      return res.status(404).json({
+        success: false,
+        message: "Site not found",
+      });
+    }
+
+    if (!site.history || site.history.length === 0) {
+      console.log(`ℹ️ No history found for site: ${siteId}`);
+      return res.status(200).json({
+        success: true,
+        history: [],
+      });
+    }
+
+    // Formatting response safely
+    const formattedHistory = site.history
+      .filter((entry) => entry.order && entry.order.items) // Ensure order & items exist
+      .map((entry) => ({
+        type: entry.actionType?.toLowerCase() || "unknown",
+        items: entry.order.items
+          .filter((item) => item.subCategory) // Ensure subCategory exists
+          .map((item) => ({
+            subCategory: item.subCategory.name,
+            quantity:
+              entry.actionType === "RETURN" ? item.returned : item.quantity,
+          })),
+      }));
+
+    console.log(`✅ Successfully fetched history for site: ${siteId}`);
+    res.status(200).json({
+      success: true,
+      history: formattedHistory,
+    });
+  } catch (error) {
+    console.error("❌ Error fetching site history:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};

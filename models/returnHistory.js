@@ -1,28 +1,31 @@
+// models/history.js
 const mongoose = require("mongoose");
 
-const returnHistorySchema = new mongoose.Schema(
+const historySchema = new mongoose.Schema(
   {
-    orderId: {
+    actionType: {
+      type: String,
+      required: true,
+      enum: ["RENT", "RETURN", "UPDATE"], // Types of actions
+    },
+    order: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Order",
       required: true,
-    }, // Links return entry to an order
-
-    items: [
-      {
-        subCategory: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "SubCategory",
-          required: true,
-        },
-        quantityReturned: { type: Number, required: true }, // How many items were returned
-      },
-    ],
-
-    returnDate: { type: Date, default: Date.now }, // Timestamp of return
+    },
+    customer: {
+      // Optional: Track which user performed the action
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Customer", // If you have a User model
+    },
+    details: {
+      // Store relevant changes (e.g., items returned)
+      type: mongoose.Schema.Types.Mixed,
+      required: true,
+    },
   },
   { timestamps: true }
 );
 
-const ReturnHistory = mongoose.model("ReturnHistory", returnHistorySchema);
-module.exports = ReturnHistory;
+const History = mongoose.model("History", historySchema);
+module.exports = History;

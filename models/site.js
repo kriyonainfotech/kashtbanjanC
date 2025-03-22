@@ -11,6 +11,26 @@ const siteSchema = new mongoose.Schema(
     },
     sitename: { type: String, required: true },
     address: { type: String, required: true },
+    history: [
+      {
+        actionType: {
+          type: String,
+          enum: ["rent", "return", "payment"],
+          required: true,
+        },
+        order: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Order",
+          required: true,
+        },
+        customer: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Customer",
+        },
+        details: mongoose.Schema.Types.Mixed, // Store relevant details
+        timestamp: { type: Date, default: Date.now },
+      },
+    ],
   },
   { timestamps: true }
 );
