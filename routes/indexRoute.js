@@ -8,5 +8,6 @@ router.use("/stock", require("./stockRoute"));
 router.use("/site", require("./siteRoute"));
 router.use("/customer", require("./customerRoute"));
 router.use("/order", require("./orderRoute"));
+router.use("/payment", require("./paymentRoute"));
 
 module.exports = router;

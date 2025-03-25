@@ -5,35 +5,46 @@ const mongoose = require("mongoose");
 exports.addStock = async (req, res) => {
   try {
     const { subCategory, quantity, pricePerItem } = req.body;
-    console.log("📩 Received Request:", { subCategory, quantity, pricePerItem });
+    console.log("📩 Received Request:", {
+      subCategory,
+      quantity,
+      pricePerItem,
+    });
 
     // 1️⃣ Check if SubCategory exists
     if (!mongoose.Types.ObjectId.isValid(subCategory)) {
       console.log("❌ Invalid SubCategory ID:", subCategory);
-      return res.status(400).send({ success: false, message: "Invalid SubCategory ID" });
+      return res
+        .status(400)
+        .send({ success: false, message: "Invalid SubCategory ID" });
     }
 
     const subCategoryExists = await SubCategory.exists({ _id: subCategory });
     if (!subCategoryExists) {
       console.log("⚠️ SubCategory Not Found:", subCategory);
-      return res.status(404).send({ success: false, message: "SubCategory does not exist" });
+      return res
+        .status(404)
+        .send({ success: false, message: "SubCategory does not exist" });
     }
 
     // 2️⃣ Check if Stock already exists for this SubCategory
-    let stock = await Stock.findOne({ subCategory });
+    // let stock = await Stock.findOne({ subCategory });
 
-    if (stock) {
-      console.log("🔄 Updating Existing Stock:", subCategory);
-      stock.quantity += quantity;
-      stock.pricePerItem = pricePerItem;
-      await stock.save();
-      console.log("✅ Stock Updated Successfully:", stock);
-    } else {
-      console.log("🆕 Creating New Stock Entry:", subCategory);
-      stock = new Stock({ subCategory, quantity, pricePerItem });
-      await stock.save();
-      console.log("🎉 New Stock Added:", stock);
-    }
+    // if (stock) {
+    //   console.log("🔄 Updating Existing Stock:", subCategory);
+    //   stock.quantity += quantity;
+    //   stock.pricePerItem = pricePerItem;
+    //   await stock.save();
+    //   console.log("✅ Stock Updated Successfully:", stock);
+    // } else {
+    //   console.log("🆕 Creating New Stock Entry:", subCategory);
+    //   stock = new Stock({ subCategory, quantity, pricePerItem });
+    //   await stock.save();
+    //   console.log("🎉 New Stock Added:", stock);
+    // }
+
+    let stock = await Stock.create({ subCategory, quantity, pricePerItem });
+    console.log("🎉 New Stock Added:", stock);
 
     // 3️⃣ Send Success Response
     res.status(201).send({
@@ -98,7 +109,6 @@ exports.deleteStock = async (req, res) => {
   }
 };
 
-
 exports.editStock = async (req, res) => {
   console.log("✍️ Attempting to edit stock...");
   try {
@@ -151,23 +161,20 @@ exports.getStockBySubCategory = async (req, res) => {
         .json({ success: false, message: "SubCategory ID is required" });
     }
 
-     const stockItems = await Stock.find({ subCategory: subCategoryId })
-       .populate({
-         path: "subCategory",
-         populate: {
-           path: "category",
-           select: "name",
-         },
-         select: "name size category",
-       })
-       .lean();
-
+    const stockItems = await Stock.find({ subCategory: subCategoryId })
+      .populate({
+        path: "subCategory",
+        populate: {
+          path: "category",
+          select: "name",
+        },
+        select: "name size category",
+      })
+      .lean();
 
     if (!stockItems.length) {
       console.log("⚠️ No stock found for this subcategory");
-      return res
-        .status(404)
-        .json({ success: false, message: "No stock found" });
+      return res.send({ success: false, message: "No stock found", stock: [] });
     }
 
     console.log(`✅ Found ${stockItems.length} stock items`);

@@ -67,3 +67,24 @@ exports.createCustomer = async (req, res) => {
   }
 };
 
+exports.getAllCustomers = async (req, res) => {
+  try {
+    console.log("📝 [GET ALL CUSTOMERS] API hit");
+
+    const allCustomers = await Customer.find();
+    console.log("✅ [All Customers Fetched] Count:", allCustomers.length);
+
+    res.status(200).send({
+      success: true,
+      message: "🎉 All customers fetched successfully",
+      allCustomers,
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).send({
+      success: false,
+      message: "Internal Server Error",
+      error: error.message,
+    });
+  }
+};

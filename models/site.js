@@ -31,6 +31,7 @@ const siteSchema = new mongoose.Schema(
         timestamp: { type: Date, default: Date.now },
       },
     ],
+    payments: [{ type: mongoose.Schema.Types.ObjectId, ref: "Payment" }], // Reference to Payment model
   },
   { timestamps: true }
 );

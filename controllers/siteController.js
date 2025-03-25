@@ -213,6 +213,10 @@ exports.getSiteHistory = async (req, res) => {
           path: "items.subCategory",
           select: "name",
         },
+      })
+      .populate({
+        path: "payments",
+        select: "amount paymentMethod paymentType date", // Fetch amount & payment details
       });
 
     if (!site) {
@@ -223,11 +227,12 @@ exports.getSiteHistory = async (req, res) => {
       });
     }
 
-    if (!site.history || site.history.length === 0) {
-      console.log(`ℹ️ No history found for site: ${siteId}`);
+    if (!site.history.length && !site.payments.length) {
+      console.log(`ℹ️ No history or payments found for site: ${siteId}`);
       return res.status(200).json({
         success: true,
         history: [],
+        payments: [],
       });
     }
 
@@ -245,10 +250,18 @@ exports.getSiteHistory = async (req, res) => {
           })),
       }));
 
+    const formattedPayments = site.payments.map((payment) => ({
+      amount: payment.amount,
+      method: payment.paymentMethod,
+      type: payment.paymentType,
+      date: payment.date,
+    }));
+
     console.log(`✅ Successfully fetched history for site: ${siteId}`);
     res.status(200).json({
       success: true,
       history: formattedHistory,
+      payments: formattedPayments,
     });
   } catch (error) {
     console.error("❌ Error fetching site history:", error);
