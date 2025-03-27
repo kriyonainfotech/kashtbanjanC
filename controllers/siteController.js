@@ -26,7 +26,7 @@ exports.addSite = async (req, res) => {
       });
     }
 
-     const customerExists = await Customer.exists({ _id: customer });
+    const customerExists = await Customer.exists({ _id: customer });
     if (!customerExists) {
       console.log("⚠️ [Customer Not Found]:", customer);
       return res.status(404).json({
@@ -47,6 +47,17 @@ exports.addSite = async (req, res) => {
       `✅ [Site Created] ID: ${newSite._id} for Customer: ${customerExists}`
     );
 
+    // ✅ Add the new site ID to the customer's sites array
+    await Customer.findByIdAndUpdate(
+      customer,
+      { $push: { sites: newSite._id } },
+      { new: true }
+    );
+
+    console.log(
+      `✅ [Customer Updated] Site ${newSite._id} added to customer ${customer}`
+    );
+
     res.status(201).json({
       success: true,
       message: "🎉 Site added successfully",
@@ -61,7 +72,6 @@ exports.addSite = async (req, res) => {
     });
   }
 };
-
 exports.getSitesByCustomer = async (req, res) => {
   try {
     console.log("🎉 [GET SITES BY CUSTOMER] API hit");
@@ -99,7 +109,9 @@ exports.getSitesByCustomer = async (req, res) => {
 
     const sites = await Site.find({ customer });
 
-    console.log(`✅ [Sites Fetched] Found ${sites.length} sites for customer: ${customer}`);
+    console.log(
+      `✅ [Sites Fetched] Found ${sites.length} sites for customer: ${customer}`
+    );
 
     res.status(200).json({
       success: true,
@@ -200,23 +212,93 @@ exports.editSite = async (req, res) => {
 //   }
 // };
 
+// exports.getSiteHistory = async (req, res) => {
+//   try {
+//     const { siteId } = req.body;
+//     console.log(`📌 Fetching history for site: ${siteId}`);
+
+//     const site = await Site.findById(siteId)
+//       .select("history")
+//       .populate({
+//         path: "history.order",
+//         populate: {
+//           path: "items.subCategory",
+//           select: "name",
+//         },
+//       })
+//       .populate({
+//         path: "payments",
+//         select: "amount paymentMethod paymentType date", // Fetch amount & payment details
+//       });
+
+//     if (!site) {
+//       console.log(`⚠️ Site not found: ${siteId}`);
+//       return res.status(404).json({
+//         success: false,
+//         message: "Site not found",
+//       });
+//     }
+
+//     if (!site.history.length && !site.payments.length) {
+//       console.log(`ℹ️ No history or payments found for site: ${siteId}`);
+//       return res.status(200).json({
+//         success: true,
+//         history: [],
+//         payments: [],
+//       });
+//     }
+
+//     // Formatting response safely
+//     const formattedHistory = site.history
+//       .filter((entry) => entry.order && entry.order.items) // Ensure order & items exist
+//       .map((entry) => ({
+//         type: entry.actionType?.toLowerCase() || "unknown",
+//         items: entry.order.items
+//           .filter((item) => item.subCategory) // Ensure subCategory exists
+//           .map((item) => ({
+//             subCategory: item.subCategory.name,
+//             quantity:
+//               entry.actionType === "RETURN" ? item.returned : item.quantity,
+//           })),
+//       }));
+
+//     const formattedPayments = site.payments.map((payment) => ({
+//       amount: payment.amount,
+//       method: payment.paymentMethod,
+//       type: payment.paymentType,
+//       date: payment.date,
+//     }));
+
+//     console.log(`✅ Successfully fetched history for site: ${siteId}`);
+//     res.status(200).json({
+//       success: true,
+//       history: formattedHistory,
+//       payments: formattedPayments,
+//     });
+//   } catch (error) {
+//     console.error("❌ Error fetching site history:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Internal server error",
+//     });
+//   }
+// };
 exports.getSiteHistory = async (req, res) => {
   try {
     const { siteId } = req.body;
     console.log(`📌 Fetching history for site: ${siteId}`);
 
+    // Fetch site with history and payment details
+
+    // Fetch site with history and payments
     const site = await Site.findById(siteId)
-      .select("history")
+      .select("name history payments dueAmount") // Include site name & due amount
       .populate({
         path: "history.order",
         populate: {
           path: "items.subCategory",
           select: "name",
         },
-      })
-      .populate({
-        path: "payments",
-        select: "amount paymentMethod paymentType date", // Fetch amount & payment details
       });
 
     if (!site) {
@@ -227,41 +309,47 @@ exports.getSiteHistory = async (req, res) => {
       });
     }
 
-    if (!site.history.length && !site.payments.length) {
-      console.log(`ℹ️ No history or payments found for site: ${siteId}`);
-      return res.status(200).json({
-        success: true,
-        history: [],
-        payments: [],
-      });
-    }
-
-    // Formatting response safely
+    // 🛠️ Format Complete History (Orders + Payments)
     const formattedHistory = site.history
-      .filter((entry) => entry.order && entry.order.items) // Ensure order & items exist
-      .map((entry) => ({
-        type: entry.actionType?.toLowerCase() || "unknown",
-        items: entry.order.items
-          .filter((item) => item.subCategory) // Ensure subCategory exists
-          .map((item) => ({
-            subCategory: item.subCategory.name,
-            quantity:
-              entry.actionType === "RETURN" ? item.returned : item.quantity,
-          })),
-      }));
+      .map((entry) => {
+        if (entry.actionType === "payment") {
+          // ✅ Format payments stored in history
+          return {
+            type: "payment",
+            date: entry.timestamp || new Date(),
+            details: {
+              amount: entry.details.amount || 0,
+              method: entry.details.paymentMethod || "N/A",
+              type: entry.details.paymentType || "N/A",
+              remarks: entry.details.remarks || "No remarks",
+            },
+          };
+        } else {
+          // ✅ Format order-related history
+          return {
+            type: entry.actionType || "UNKNOWN",
+            date: entry.date || new Date(),
+            items:
+              entry.order?.items
+                .filter((item) => item.subCategory) // Ensure valid items
+                .map((item) => ({
+                  subCategory: item.subCategory.name,
+                  quantity:
+                    entry.actionType === "return"
+                      ? item.returned
+                      : item.quantity,
+                })) || [],
+          };
+        }
+      })
+      .sort((a, b) => new Date(a.date) - new Date(b.date)); // Sort oldest first
 
-    const formattedPayments = site.payments.map((payment) => ({
-      amount: payment.amount,
-      method: payment.paymentMethod,
-      type: payment.paymentType,
-      date: payment.date,
-    }));
-
-    console.log(`✅ Successfully fetched history for site: ${siteId}`);
+    console.log(`✅ Successfully fetched site history for: ${siteId}`);
     res.status(200).json({
       success: true,
+      siteName: site.name,
+      dueAmount: site.dueAmount, // 🔹 Include due amount
       history: formattedHistory,
-      payments: formattedPayments,
     });
   } catch (error) {
     console.error("❌ Error fetching site history:", error);

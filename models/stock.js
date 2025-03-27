@@ -9,7 +9,7 @@ const stockSchema = new mongoose.Schema(
     }, // Links to the SubCategory
 
     quantity: { type: Number, required: true }, // Number of items
-
+    availableStock: { type: Number },
     OnRent: { type: Number, default: 0 },
 
     pricePerItem: { type: Number, required: true }, // Price per item

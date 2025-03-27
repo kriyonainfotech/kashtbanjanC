@@ -5,21 +5,28 @@ const Stock = require("../models/stock");
 
 exports.createSubCategory = async (req, res) => {
   try {
-    const { name, category, size, minStock, rentalRate } = req.body;
+    const { name, category, size, minStock, rentalRate, userId } = req.body;
 
     console.log("📝 Received request to create subcategory:", name);
 
     // Check if category exists
-    const existingCategory = await Category.findById(category).lean();
+    const existingCategory = await Category.findOne({
+      _id: category,
+      userId,
+    }).lean();
     if (!existingCategory) {
-      console.log("❌ Category not found:", category);
-      return res
-        .status(400)
-        .send({ success: false, message: "Category does not exist!" });
+      console.log("❌ Category not found or unauthorized:", category);
+      return res.status(400).send({
+        success: false,
+        message: "Category does not exist or unauthorized!",
+      });
     }
 
-    // Check if SubCategory already exists
-    const existingSubCategory = await SubCategory.findOne({ name }).lean();
+    // Check if SubCategory already exists for the user
+    const existingSubCategory = await SubCategory.findOne({
+      name,
+      userId,
+    }).lean();
     if (existingSubCategory) {
       console.log("⚠️ SubCategory already exists:", name);
       return res
@@ -34,6 +41,7 @@ exports.createSubCategory = async (req, res) => {
       size,
       minStock,
       rentalRate,
+      userId, // 🔹 Attach userId
     });
 
     console.log("✅ SubCategory created successfully:", subCategory.name);
@@ -50,37 +58,50 @@ exports.createSubCategory = async (req, res) => {
 
 exports.editSubCategory = async (req, res) => {
   try {
-    const { subCategoryId, ...updateFields } = req.body; // Extract ID and update fields
+    const { userId, subCategoryId, ...updateFields } = req.body; // Extract ID and update fields
 
     if (!subCategoryId) {
-      return res.status(400).send({ message: "SubCategory ID is required" });
+      return res
+        .status(400)
+        .send({ success: false, message: "SubCategory ID is required" });
     }
 
-    // Get all keys from the request body
-    const keys = Object.keys(updateFields); // Store field names separately
+    if (!userId) {
+      return res
+        .status(400)
+        .send({ success: false, message: "User ID is required" });
+    }
 
-    // Create update object dynamically
+    const subCategory = await SubCategory.findOne({
+      _id: subCategoryId,
+      userId,
+    });
+    if (!subCategory) {
+      return res.status(404).send({
+        success: false,
+        message: "SubCategory not found or unauthorized!",
+      });
+    }
+
+    // Filter out undefined values from updateFields
     let updateObj = {};
-    keys.forEach((key) => {
+    Object.keys(updateFields).forEach((key) => {
       if (updateFields[key] !== undefined) {
         updateObj[key] = updateFields[key];
       }
     });
 
-    const subCategory = await SubCategory.findByIdAndUpdate(
+    // Perform update
+    const updatedSubCategory = await SubCategory.findByIdAndUpdate(
       subCategoryId,
-      { $set: updateObj }, // Update only provided fields
+      { $set: updateObj },
       { new: true }
     );
-
-    if (!subCategory) {
-      return res.status(404).send({ message: "SubCategory not found!" });
-    }
 
     res.status(200).send({
       success: true,
       message: "SubCategory updated successfully",
-      subCategory,
+      subCategory: updatedSubCategory,
     });
   } catch (error) {
     console.log(error, "error");
@@ -92,8 +113,12 @@ exports.editSubCategory = async (req, res) => {
 };
 
 exports.deleteSubCategory = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
-    const { subCategoryId } = req.body;
+    const { subCategoryId, userId } = req.body;
+
     console.log(
       `🗑️ [Delete SubCategory] Request received for ID: ${subCategoryId}`
     );
@@ -106,25 +131,27 @@ exports.deleteSubCategory = async (req, res) => {
         .send({ success: false, message: "SubCategory ID is required!" });
     }
 
-    // 2️⃣ Check if the SubCategory exists
-    const subCategory = await SubCategory.findById(subCategoryId);
+    // 2️⃣ Check if SubCategory exists & belongs to the user
+    const subCategory = await SubCategory.findOne({
+      _id: subCategoryId,
+      userId,
+    }).session(session);
     if (!subCategory) {
-      console.log("⚠️ SubCategory not found!");
-      return res
-        .status(404)
-        .send({ success: false, message: "SubCategory not found!" });
+      console.log("⚠️ SubCategory not found or unauthorized!");
+      return res.status(404).send({
+        success: false,
+        message: "SubCategory not found or unauthorized!",
+      });
     }
 
     // 3️⃣ Check if any stock under this SubCategory has items on rent
     const stockWithOnRent = await Stock.findOne({
       subCategory: subCategoryId,
       OnRent: { $gt: 0 },
-    });
+    }).session(session);
 
     if (stockWithOnRent) {
-      console.log(
-        `🚫 Cannot delete! Stock under this subcategory has ${stockWithOnRent.OnRent} items on rent.`
-      );
+      console.log(`🚫 Cannot delete! ${stockWithOnRent.OnRent} items on rent.`);
       return res.status(400).send({
         success: false,
         message:
@@ -132,84 +159,82 @@ exports.deleteSubCategory = async (req, res) => {
       });
     }
 
-    // 4️⃣ Delete all stock associated with this subCategory (safe because no items are on rent)
-    await Stock.deleteMany({ subCategory: subCategoryId });
+    // 4️⃣ Delete all associated stock & subCategory using transactions
+    await Stock.deleteMany({ subCategory: subCategoryId }).session(session);
+    await SubCategory.findByIdAndDelete(subCategoryId).session(session);
 
-    // 5️⃣ Delete the subCategory itself
-    await SubCategory.findByIdAndDelete(subCategoryId);
+    // Commit transaction
+    await session.commitTransaction();
+    session.endSession();
+
     console.log("✅ SubCategory and associated stock deleted successfully");
-
     res.status(200).send({
       success: true,
       message: "SubCategory and its stock deleted successfully!",
     });
   } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+
     console.error("❌ [Error] Deleting SubCategory:", error);
-    res.status(500).send({
-      success: false,
-      message: "Internal Server Error",
-    });
+    res.status(500).send({ success: false, message: "Internal Server Error" });
   }
 };
 
 exports.getSubCategoryById = async (req, res) => {
-  console.log("🔍 Fetching SubCategory by ID...");
-
   try {
-    const subCategoryId =
-      req.body.subCategoryId ||
-      req.params.subCategoryId ||
-      req.query.subCategoryId;
+    console.log("🔍 [Fetch SubCategory] Request received...");
+
+    const { subCategoryId, userId } = req.body;
 
     console.log("📩 Request Body:", req.body);
-    console.log(`🔍 SubCategory ID: ${subCategoryId}`);
 
-    if (!subCategoryId) {
-      console.log("❌ SubCategory ID is required");
-      return res.status(400).send({ message: "SubCategory ID is required" });
+    if (!subCategoryId || !userId) {
+      console.log("❌ Missing SubCategory ID or User ID");
+      return res.status(400).json({
+        success: false,
+        message: "SubCategory ID and User ID are required!",
+      });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(subCategoryId)) {
-      console.log("❌ Invalid SubCategory ID format:", subCategoryId);
-      return res
-        .status(400)
-        .send({ message: "Invalid SubCategory ID format!" });
+    if (
+      !mongoose.Types.ObjectId.isValid(subCategoryId) ||
+      !mongoose.Types.ObjectId.isValid(userId)
+    ) {
+      console.log("❌ Invalid ID format:", { subCategoryId, userId });
+      return res.status(400).json({
+        success: false,
+        message: "Invalid SubCategory ID or User ID format!",
+      });
     }
 
-    // Debug if the ID exists
-    const checkExists = await SubCategory.exists({ _id: subCategoryId });
-    console.log("🔍 SubCategory Exists in DB:", checkExists);
-
-    if (!checkExists) {
-      console.log(`⚠️ SubCategory not found in DB: ${subCategoryId}`);
-      return res.status(404).send({ message: "SubCategory not found!" });
-    }
-
-    // Fetch SubCategory with populated category name
-    const subCategory = await SubCategory.findById(
-      new mongoose.Types.ObjectId(subCategoryId)
-    )
+    // Fetch SubCategory with user validation and populated category name
+    const subCategory = await SubCategory.findOne({
+      _id: subCategoryId,
+      userId: userId, // Ensures the user owns this subCategory
+    })
       .populate("category", "name")
       .lean();
 
-    console.log("📌 Mongoose Query Debug:", {
-      id: subCategoryId,
-      queryResult: subCategory,
-    });
-
     if (!subCategory) {
-      console.log(`⚠️ SubCategory not found after query: ${subCategoryId}`);
-      return res.status(404).send({ message: "SubCategory not found!" });
+      console.log(
+        `⚠️ SubCategory not found or does not belong to user: ${userId}`
+      );
+      return res
+        .status(404)
+        .json({
+          success: false,
+          message: "SubCategory not found or access denied!",
+        });
     }
 
     console.log("✅ SubCategory Found:", subCategory);
-    res.status(200).send({ success: true, subCategory });
+    res.status(200).json({ success: true, subCategory });
   } catch (error) {
-    console.error("🚨 Error fetching SubCategory:", error);
-    res.status(500).send({ message: "Internal Server Error" });
+    console.error("🚨 [Error] Fetching SubCategory:", error);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 };
-
 exports.getSubCategoriesByCategory = async (req, res) => {
   console.log("🔍 Fetching SubCategories by Category...");
   try {

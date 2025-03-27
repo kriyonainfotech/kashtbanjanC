@@ -1,16 +1,21 @@
 const Category = require("../models/category");
 const SubCategory = require("../models/subcategory");
 const Stock = require("../models/stock");
+const mongoose = require("mongoose");
 
 exports.createCategory = async (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, userId } = req.body; // Get userId from request body
+
+    if (!userId) {
+      return res.status(400).send({ message: "User ID is required!" });
+    }
 
     const existingCategory = await Category.findOne({ name });
     if (existingCategory)
       return res.status(400).send({ message: "Category already exists!" });
 
-    const category = await Category.create({ name });
+    const category = await Category.create({ name, userId }); // Save with userId
 
     res.status(201).send({
       success: true,
@@ -28,16 +33,22 @@ exports.createCategory = async (req, res) => {
 
 exports.editCategory = async (req, res) => {
   try {
-    const { categoryId, name } = req.body;
+    const { categoryId, name, userId } = req.body;
 
-    const category = await Category.findByIdAndUpdate(
-      categoryId,
+    if (!userId) {
+      return res.status(400).send({ message: "User ID is required!" });
+    }
+
+    const category = await Category.findOneAndUpdate(
+      { _id: categoryId, userId }, // Ensure category belongs to the user
       { name },
       { new: true }
     );
 
     if (!category)
-      return res.status(404).send({ message: "Category not found!" });
+      return res
+        .status(404)
+        .send({ message: "Category not found or unauthorized!" });
 
     res.status(200).send({
       success: true,
@@ -55,16 +66,23 @@ exports.editCategory = async (req, res) => {
 
 exports.deleteCategory = async (req, res) => {
   try {
-    const { categoryId } = req.body;
+    const { categoryId, userId } = req.body; // Get userId from request body
+
     console.log(`🗑️ [Delete Category] Request received for ID: ${categoryId}`);
 
-    // 🔹 Check if the category exists
-    const category = await Category.findById(categoryId);
-    if (!category) {
-      console.log("⚠️ Category not found!");
+    if (!userId) {
       return res
-        .status(404)
-        .json({ success: false, message: "Category not found!" });
+        .status(400)
+        .json({ success: false, message: "User ID is required!" });
+    }
+
+    const category = await Category.findOne({ _id: categoryId, userId });
+    if (!category) {
+      console.log("⚠️ Category not found or unauthorized!");
+      return res.status(404).json({
+        success: false,
+        message: "Category not found or unauthorized!",
+      });
     }
 
     // 🔹 Check if subcategories exist
@@ -137,13 +155,20 @@ exports.deleteCategory = async (req, res) => {
 // };
 exports.getAllCategories = async (req, res) => {
   try {
-    console.log("🔍 Fetching all categories...");
+    const { userId } = req.body;
 
-    // Fetch categories with subcategory count
+    if (!userId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "User ID is required!" });
+    }
+
+    // Fetch categories only for the logged-in user
     const categories = await Category.aggregate([
+      { $match: { userId: new mongoose.Types.ObjectId(userId) } }, // ✅ Filter by userId
       {
         $lookup: {
-          from: "subcategories", // ✅ Correct collection name
+          from: "subcategories",
           localField: "_id",
           foreignField: "category",
           as: "subCategories",
@@ -151,13 +176,13 @@ exports.getAllCategories = async (req, res) => {
       },
       {
         $addFields: {
-          subCategoryCount: { $size: "$subCategories" }, // ✅ Count subcategories
+          subCategoryCount: { $size: "$subCategories" },
           subCategoryIds: {
             $map: { input: "$subCategories", as: "sub", in: "$$sub._id" },
-          }, // Extract subcategory IDs
+          },
         },
       },
-      { $project: { subCategories: 0 } }, // ✅ Hide full subCategories array
+      { $project: { subCategories: 0 } },
     ]);
 
     if (!categories.length) {
@@ -223,5 +248,3 @@ exports.getAllCategories = async (req, res) => {
     });
   }
 };
-
-

@@ -4,6 +4,7 @@ const {
   deleteStock,
   editStock,
   getStockBySubCategory,
+  getAllStock,
 } = require("../controllers/stockController");
 const routes = express.Router();
 
@@ -11,5 +12,6 @@ routes.post("/add", addStock);
 routes.delete("/delete", deleteStock);
 routes.post("/edit", editStock);
 routes.post("/bySubcategory", getStockBySubCategory);
+routes.get("/getallstocks", getAllStock);
 
 module.exports = routes;

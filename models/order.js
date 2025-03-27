@@ -24,8 +24,11 @@ const orderSchema = new mongoose.Schema(
 
         quantity: { type: Number, required: true }, // Quantity rented
         returned: { type: Number, default: 0 }, // 🆕 Track returned items
+        rentedAt: { type: Date, default: Date.now }, // ✅ Store when rented
+        returnedAt: { type: Date }, // ✅ Store when returned
       },
     ],
+    totalCostAmount: { type: Number, default: 0 }, // 🆕 Track total rental cost
     status: {
       type: String,
       enum: ["onrent", "returned", "paid"],

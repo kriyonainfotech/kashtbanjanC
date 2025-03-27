@@ -1,8 +1,12 @@
 const express = require("express");
-const { createCustomer } = require("../controllers/customerController");
+const {
+  createCustomer,
+  getAllCustomers,
+} = require("../controllers/customerController");
 const routes = express.Router();
 
 routes.post("/add", createCustomer);
-routes.get("/all");
+routes.post("/allcustomers", getAllCustomers);
+
 
 module.exports = routes;

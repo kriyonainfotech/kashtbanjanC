@@ -8,4 +8,5 @@ routes.delete("/delete", deleteSubCategory);
 routes.post("/byId", getSubCategoryById);
 routes.post("/byCategory", getSubCategoriesByCategory);
 
+
 module.exports = routes;
