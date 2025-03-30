@@ -9,13 +9,10 @@ const customerSchema = new mongoose.Schema(
       required: true,
     },
     name: { type: String, required: true },
-    email: { type: String },
     phone: { type: String, required: true },
     address: { type: String, required: true },
     pancardNumber: { type: String },
     aadhaarNumber: { type: String },
-    adhaarImage: { type: String },
-    panCardImage: { type: String },
     sites: [
       {
         type: mongoose.Schema.Types.ObjectId,
