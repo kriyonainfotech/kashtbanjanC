@@ -1,6 +1,7 @@
 const Site = require("../models/site")
 const Customer = require("../models/customer")
 const mongoose = require("mongoose");
+const Order = require("../models/order");
 
 exports.addSite = async (req, res) => {
   try {
@@ -356,6 +357,70 @@ exports.getSiteHistory = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Internal server error",
+    });
+  }
+};
+
+exports.deleteSite = async (req, res) => {
+  try {
+    console.log("🗑️ [DELETE SITE] API hit");
+
+    const { siteId } = req.body; // 📌 Get site ID from request params
+
+    if (!siteId) {
+      return res.status(400).json({
+        success: false,
+        message: "Site ID is required!",
+      });
+    }
+
+    // 🔍 Step 1: Check if site exists
+    const site = await Site.findById(siteId);
+    if (!site) {
+      return res.status(404).json({
+        success: false,
+        message: "Site not found!",
+      });
+    }
+
+    // 🔍 Step 2: Check if there are pending orders
+    const pendingOrders = await Order.find({
+      site: siteId,
+      $or: [
+        { status: "onrent" }, // Order is still on rent
+        { $expr: { $gt: ["$items.quantity", "$items.returned"] } }, // Some items are not returned
+      ],
+    });
+
+    if (pendingOrders.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Cannot delete site! There are pending orders with unreturned items.",
+      });
+    }
+
+    // 🔍 Step 3: Check if there is any due amount
+    if (site.dueAmount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot delete site! There is a pending due amount.",
+      });
+    }
+
+    // 🗑️ Step 4: Delete the site
+    await Site.findByIdAndDelete(siteId);
+
+    res.status(200).json({
+      success: true,
+      message: "✅ Site deleted successfully!",
+    });
+  } catch (error) {
+    console.error("❌ [Error] Deleting site:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      error: error.message,
     });
   }
 };

@@ -297,12 +297,83 @@ exports.getStockBySubCategory = async (req, res) => {
   }
 };
 
+// exports.getAllStock = async (req, res) => {
+//   try {
+//     console.log("📝 [GET ALL STOCK] API hit");
+
+//     console.log("📝 [GET ALL STOCK] API hit");
+
+//     const { userId } = req.body; // 🔥 Get userId from request body
+
+//     if (!userId) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "User ID is required.",
+//       });
+//     }
+
+//     // ✅ Fetch all stock items and populate subcategory name
+//     const stockItems = await Stock.find()
+//       .lean()
+//       .populate("subCategory", "name") // Populate subcategory name only
+//       .select("subCategory quantity OnRent availableStock pricePerItem"); // Select required fields
+
+//     const stockItems = await Stock.find({ userId }) // 🔥 Fetch stock for this user
+//       .lean()
+//       .populate("subCategory", "name") // Populate subcategory name only
+//       .select("subCategory quantity OnRent availableStock pricePerItem"); // Select required fields
+
+//     if (!stockItems.length) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "No stock available!",
+//       });
+//     }
+
+//     res.status(200).json({
+//       success: true,
+//       message: "✅ Stock fetched successfully!",
+//       stock: stockItems,
+//     });
+//   } catch (error) {
+//     console.error("❌ [Error] Fetching stock:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Internal Server Error",
+//       error: error.message,
+//     });
+//   }
+// };
+
 exports.getAllStock = async (req, res) => {
   try {
     console.log("📝 [GET ALL STOCK] API hit");
 
-    // ✅ Fetch all stock items and populate subcategory name
-    const stockItems = await Stock.find()
+    const { userId } = req.body; // 🔥 Get userId from request body
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required.",
+      });
+    }
+
+    // 🔍 Step 1: Find all subcategories belonging to this user
+    const userSubCategories = await SubCategory.find({ userId }).select("_id");
+
+    if (!userSubCategories.length) {
+      return res.status(404).json({
+        success: false,
+        message: "No subcategories found for this user!",
+      });
+    }
+
+    const subCategoryIds = userSubCategories.map((sub) => sub._id); // Extract IDs
+
+    // 🔍 Step 2: Fetch stock items where subCategory matches the user's subcategories
+    const stockItems = await Stock.find({
+      subCategory: { $in: subCategoryIds },
+    })
       .lean()
       .populate("subCategory", "name") // Populate subcategory name only
       .select("subCategory quantity OnRent availableStock pricePerItem"); // Select required fields
@@ -310,7 +381,7 @@ exports.getAllStock = async (req, res) => {
     if (!stockItems.length) {
       return res.status(404).json({
         success: false,
-        message: "No stock available!",
+        message: "No stock available for this user!",
       });
     }
 
@@ -328,4 +399,3 @@ exports.getAllStock = async (req, res) => {
     });
   }
 };
-

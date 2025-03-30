@@ -28,6 +28,18 @@ const orderSchema = new mongoose.Schema(
         returnedAt: { type: Date }, // ✅ Store when returned
       },
     ],
+    lostOrDamagedItems: [
+      {
+        subCategory: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "SubCategory",
+          required: true,
+        },
+        lostordamagedQty: { type: Number },
+        pricePerItem: { type: Number },
+        date: { type: Date, default: Date.now },
+      },
+    ],
     totalCostAmount: { type: Number, default: 0 }, // 🆕 Track total rental cost
     status: {
       type: String,

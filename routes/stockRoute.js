@@ -12,6 +12,6 @@ routes.post("/add", addStock);
 routes.delete("/delete", deleteStock);
 routes.post("/edit", editStock);
 routes.post("/bySubcategory", getStockBySubCategory);
-routes.get("/getallstocks", getAllStock);
+routes.post("/getallstocks", getAllStock);
 
 module.exports = routes;
