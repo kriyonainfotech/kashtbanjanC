@@ -11,6 +11,12 @@ const siteSchema = new mongoose.Schema(
     },
     sitename: { type: String, required: true },
     address: { type: String, required: true },
+    orders: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Order",
+      },
+    ],
     history: [
       {
         actionType: {

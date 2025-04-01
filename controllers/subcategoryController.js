@@ -56,27 +56,97 @@ exports.createSubCategory = async (req, res) => {
   }
 };
 
+// exports.editSubCategory = async (req, res) => {
+//   try {
+//     const { userId, subCategoryId, ...updateFields } = req.body; // Extract ID and update fields
+//     console.log("User ID:", userId);
+//     console.log("Sub Category ID:", subCategoryId);
+//     console.log("Update Fields:", updateFields);
+
+//     if (!subCategoryId) {
+//       return res
+//         .status(400)
+//         .send({ success: false, message: "SubCategory ID is required" });
+//     }
+
+//     if (!userId) {
+//       return res
+//         .status(400)
+//         .send({ success: false, message: "User ID is required" });
+//     }
+
+//     const subCategory = await SubCategory.findOne({
+//       _id: subCategoryId,
+//       userId,
+//     });
+//     if (!subCategory) {
+//       return res.status(404).send({
+//         success: false,
+//         message: "SubCategory not found or unauthorized!",
+//       });
+//     }
+
+//     // Filter out undefined values from updateFields
+//     let updateObj = {};
+//     Object.keys(updateFields).forEach((key) => {
+//       if (updateFields[key] !== undefined) {
+//         updateObj[key] = updateFields[key];
+//       }
+//     });
+
+//     // Perform update
+//     const updatedSubCategory = await SubCategory.findByIdAndUpdate(
+//       subCategoryId,
+//       { $set: updateObj },
+//       { new: true }
+//     );
+//     console.log("SubCategory updated successfully:", updatedSubCategory);
+//     res.status(200).send({
+//       success: true,
+//       message: "SubCategory updated successfully",
+//       subCategory: updatedSubCategory,
+//     });
+//   } catch (error) {
+//     console.log(error, "error");
+//     res.status(500).send({
+//       success: false,
+//       message: error.message,
+//     });
+//   }
+// };
+
 exports.editSubCategory = async (req, res) => {
   try {
+    console.log("🚀 Incoming request to edit subcategory");
+    console.log("📥 Request Body:", req.body);
+
     const { userId, subCategoryId, ...updateFields } = req.body; // Extract ID and update fields
+    console.log("🆔 User ID:", userId);
+    console.log("🔖 Sub Category ID:", subCategoryId);
+    console.log("🛠️ Update Fields:", updateFields);
 
     if (!subCategoryId) {
+      console.log("❌ Missing SubCategory ID");
       return res
         .status(400)
         .send({ success: false, message: "SubCategory ID is required" });
     }
 
     if (!userId) {
+      console.log("❌ Missing User ID");
       return res
         .status(400)
         .send({ success: false, message: "User ID is required" });
     }
 
+    console.log("🔍 Searching for subcategory...");
     const subCategory = await SubCategory.findOne({
       _id: subCategoryId,
       userId,
     });
+
     if (!subCategory) {
+      console.log("⚠️ SubCategory not found or unauthorized!");
       return res.status(404).send({
         success: false,
         message: "SubCategory not found or unauthorized!",
@@ -91,26 +161,39 @@ exports.editSubCategory = async (req, res) => {
       }
     });
 
+    console.log("📦 Filtered Update Object:", updateObj);
+
     // Perform update
+    console.log("🔄 Updating SubCategory...");
     const updatedSubCategory = await SubCategory.findByIdAndUpdate(
       subCategoryId,
       { $set: updateObj },
       { new: true }
     );
 
+    if (!updatedSubCategory) {
+      console.log("❌ Update failed");
+      return res.status(500).send({
+        success: false,
+        message: "Failed to update subcategory",
+      });
+    }
+
+    console.log("✅ SubCategory updated successfully:", updatedSubCategory);
     res.status(200).send({
       success: true,
       message: "SubCategory updated successfully",
       subCategory: updatedSubCategory,
     });
   } catch (error) {
-    console.log(error, "error");
+    console.log("💥 Error:", error);
     res.status(500).send({
       success: false,
       message: error.message,
     });
   }
 };
+
 
 exports.deleteSubCategory = async (req, res) => {
   const session = await mongoose.startSession();

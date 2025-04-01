@@ -194,6 +194,7 @@ exports.addOrderItems = async (req, res) => {
       { _id: site },
       {
         $push: {
+          orders: order._id,
           history: {
             actionType: "rent",
             order: order._id,
@@ -370,7 +371,6 @@ exports.addOrderItems = async (req, res) => {
 //     });
 //   }
 // };
-
 
 // exports.returnOrderItems = async (req, res) => {
 //   const session = await mongoose.startSession();
@@ -560,7 +560,8 @@ exports.returnOrderItems = async (req, res) => {
         await session.abortTransaction();
         session.endSession();
         console.log(
-          `❌ Cannot return more than ${maxReturnable} items for ${returnItem.subCategory}.`)
+          `❌ Cannot return more than ${maxReturnable} items for ${returnItem.subCategory}.`
+        );
         return res.status(400).json({
           success: false,
           message: `Cannot return more than ${maxReturnable} items for ${returnItem.subCategory}.`,
@@ -650,7 +651,6 @@ exports.returnOrderItems = async (req, res) => {
     });
   }
 };
-
 
 exports.getCustomerRentedItems = async (req, res) => {
   try {
@@ -850,3 +850,86 @@ exports.addLostOrDamagedItem = async (req, res) => {
     });
   }
 };
+
+exports.getOrdersBySite = async (req, res) => {
+  try {
+    const { siteId } = req.body;
+    console.log(`🔍 Searching for site with ID: ${siteId}`);
+
+    // Find the site and populate its orders
+    const site = await Site.findById(siteId)
+      .populate({
+        path: "orders",
+        populate: [
+          {
+            path: "items.subCategory", // ✅ Populate subcategory details
+            select: "name rentalRate",
+          },
+          {
+            path: "customer", // ✅ Populate customer details if needed
+            select: "name",
+          },
+        ],
+      })
+      .exec();
+
+    if (!site) {
+      console.warn(`⚠️ Site not found for ID: ${siteId}`);
+      return res.status(404).json({ message: "Site not found" });
+    }
+
+    console.log(`✅ Site found! (${site._id})`);
+    console.log(`📦 Orders count: ${site.orders.length}`);
+
+    res.status(200).json({
+      success: true,
+      message: "✅ Site orders fetched successfully!",
+      orders: site.orders,
+    });
+  } catch (error) {
+    console.error(`❌ Error fetching site orders:`, error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+exports.getReturnedOrderItems = async (req, res) => {
+  try {
+    const { siteId } = req.body;
+    console.log(`🔍 Searching for site with ID: ${siteId}`);
+
+    // Find the site and populate its orders with items where returned > 0
+    const site = await Site.findById(siteId)
+      .populate({
+        path: "orders",
+        populate: [
+          {
+            path: "items.subCategory", // ✅ Populate subcategory details
+            select: "name rentalRate",
+          },
+          {
+            path: "customer", // ✅ Populate customer details if needed
+            select: "name",
+          },
+        ],
+      })
+      .exec();
+
+    if (!site) {
+      console.warn(`⚠️ Site not found for ID: ${siteId}`);
+      return res.status(404).json({ message: "Site not found" });
+    }
+
+    console.log(`✅ Site found! (${site._id})`);
+    console.log(`📦 Orders count with returned items: ${site.orders.length}`);
+
+    res.status(200).json({
+      success: true,
+      message: "✅ Orders with returned items fetched successfully!",
+      orders: site.orders,
+    });
+  } catch (error) {
+    console.error(`❌ Error fetching site orders:`, error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
