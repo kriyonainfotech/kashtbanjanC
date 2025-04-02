@@ -867,7 +867,7 @@ exports.getOrdersBySite = async (req, res) => {
           },
           {
             path: "customer", // ✅ Populate customer details if needed
-            select: "name",
+            select: "name address phone",
           },
           {
             path: "site",
@@ -912,7 +912,7 @@ exports.getReturnedOrderItems = async (req, res) => {
           },
           {
             path: "customer", // ✅ Populate customer details if needed
-            select: "name",
+            select: "name address phone",
           },
           {
             path: "site",
