@@ -13,7 +13,7 @@ app.use(express.urlencoded({ extended: true })); // For parsing URL-encoded data
 app.use("/api", require("./routes/indexRoute"));
 
 // Root Route
-app.get("/api", (req, res) => {
+app.get("/", (req, res) => {
   res.send("Welcome to the API 🚀");
 });
 
