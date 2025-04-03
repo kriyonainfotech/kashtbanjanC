@@ -942,4 +942,29 @@ exports.getReturnedOrderItems = async (req, res) => {
   }
 };
 
+exports.getOrdersByCustomer = async (req, res) => {
+  try {
+    const { customerId } = req.body; // Customer ID
+    console.log(`📝 [GET ORDERS BY CUSTOMER] API hit`);
+    console.log(`🔍 Fetching orders for customer ID: ${customerId}`);
 
+    const orders = await Order.find({ customer: customerId })
+      .populate("customer", "name phone address") // Populate customer details if needed
+      .populate("items.subCategory", "name") // Populate subCategory details
+      .sort({ createdAt: -1 }) // Sort by latest orders
+      .exec();
+
+    if (!orders.length) {
+      console.log("⚠️ No orders found for this customer.");
+      return res
+        .status(404)
+        .json({ message: "No orders found for this customer." });
+    }
+
+    console.log(`✅ Found ${orders.length} orders for customer.`);
+    res.status(200).send({ success: true, orders: orders });
+  } catch (error) {
+    console.error("❌ Error fetching customer orders:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};

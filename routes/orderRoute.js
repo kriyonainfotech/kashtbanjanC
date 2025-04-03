@@ -7,6 +7,7 @@ const {
   addLostOrDamagedItem,
   getOrdersBySite,
   getReturnedOrderItems,
+  getOrdersByCustomer,
 } = require("../controllers/orderController");
 const routes = express.Router();
 
@@ -17,5 +18,6 @@ routes.post("/getOrderItems", getSubcategoriesOnRentBySite);
 routes.post("/addlostItem", addLostOrDamagedItem);
 routes.post("/getOrdersBysite", getOrdersBySite);
 routes.post("/getReturnedOrderItems", getReturnedOrderItems);
+routes.post("/getOrdersByCustomer", getOrdersByCustomer);
 
 module.exports = routes;

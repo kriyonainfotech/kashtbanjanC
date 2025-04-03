@@ -21,7 +21,6 @@ const orderSchema = new mongoose.Schema(
           ref: "SubCategory",
           required: true,
         }, // Subcategory rented
-
         quantity: { type: Number, required: true }, // Quantity rented
         returned: { type: Number, default: 0 }, // 🆕 Track returned items
         rentedAt: { type: Date, default: Date.now }, // ✅ Store when rented
