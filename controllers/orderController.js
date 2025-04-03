@@ -901,17 +901,18 @@ exports.getReturnedOrderItems = async (req, res) => {
     const { siteId } = req.body;
     console.log(`🔍 Searching for site with ID: ${siteId}`);
 
-    // Find the site and populate its orders with items where returned > 0
+    // Find the site and populate orders
     const site = await Site.findById(siteId)
       .populate({
         path: "orders",
+        match: { "items.returned": { $gt: 0 } }, // ✅ Only orders with returned items
         populate: [
           {
-            path: "items.subCategory", // ✅ Populate subcategory details
+            path: "items.subCategory",
             select: "name rentalRate",
           },
           {
-            path: "customer", // ✅ Populate customer details if needed
+            path: "customer",
             select: "name address phone",
           },
           {
@@ -940,4 +941,5 @@ exports.getReturnedOrderItems = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
 
