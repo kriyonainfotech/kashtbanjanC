@@ -2,6 +2,7 @@ const Order = require("../models/order");
 const Stock = require("../models/stock");
 const mongoose = require("mongoose"); 
 const Site = require("../models/site");
+const moment = require("moment");
 
 // exports.addOrderItems = async (req, res) => {
 //   const session = await mongoose.startSession();
@@ -118,7 +119,12 @@ exports.addOrderItems = async (req, res) => {
   try {
     console.log("🛒 Received Order Request:", req.body);
 
-    const { customer, site, items } = req.body;
+    const { customer, site, items, orderDate } = req.body;
+    console.log("order body :", req.body);
+
+    const trimmedDate = orderDate.split(".")[0]; // Remove microseconds
+    const parsedorderDate = moment(trimmedDate, "YYYY-MM-DD HH:mm:ss").toDate();
+    console.log("Parsed order date:", orderDate);
 
     // 🛑 Validate request data
     if (!customer || !site || !Array.isArray(items) || items.length === 0) {
@@ -170,6 +176,8 @@ exports.addOrderItems = async (req, res) => {
       stock.availableStock -= item.quantity;
       stock.OnRent = (stock.OnRent || 0) + item.quantity;
       stockUpdates.push(stock);
+
+      item.rentedAt = parsedorderDate; // Store rented date in item
     }
 
     // Step 2: Apply stock deductions inside the transaction
@@ -184,10 +192,11 @@ exports.addOrderItems = async (req, res) => {
       items,
       totalCostAmount,
       rentedDate: new Date(),
+      orderDate: parsedorderDate, // 🆕 Use provided date or current date
     });
 
     await order.save({ session });
-    console.log("✅ Order created successfully:", order._id);
+    console.log("✅ Order created successfully:", order);
 
     // Step 4: Update site history & dueAmount
     await Site.updateOne(
@@ -965,6 +974,44 @@ exports.getOrdersByCustomer = async (req, res) => {
     res.status(200).send({ success: true, orders: orders });
   } catch (error) {
     console.error("❌ Error fetching customer orders:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+exports.deleteOrder = async (req, res) => {
+  try {
+    const { orderId } = req.body;
+
+    console.log(`🗑️ Attempting to delete order: ${orderId}`);
+
+    // Fetch order
+    const order = await Order.findById(orderId);
+    if (!order) {
+      console.log("❌ Order not found.");
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    // Check if all items are returned
+    const hasPendingReturns = order.items.some(
+      (item) => item.quantity !== item.returned
+    );
+    if (hasPendingReturns) {
+      console.log("⚠️ Cannot delete: Some items are not fully returned.");
+      return res.status(400).json({
+        message: "Cannot delete order: All items must be fully returned.",
+      });
+    }
+
+    // Delete order
+    await Order.findByIdAndDelete(orderId);
+    console.log("✅ Order deleted successfully.");
+
+    // Remove order reference from the Site schema
+    await Site.updateOne({ orders: orderId }, { $pull: { orders: orderId } });
+
+    res.status(200).json({ message: "Order deleted successfully" });
+  } catch (error) {
+    console.log("❌ Error deleting order:", error);
     res.status(500).json({ message: "Internal server error" });
   }
 };

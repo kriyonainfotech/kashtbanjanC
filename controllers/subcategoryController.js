@@ -352,7 +352,7 @@ exports.getSubCategoriesByCategory = async (req, res) => {
         $group: {
           _id: "$subCategory",
           totalOnRent: { $sum: "$OnRent" }, // Sum OnRent per subcategory
-          totalStock: { $sum: "$quantity" }, // Sum total available stock
+          totalStock: { $sum: "$availableStock" }, // Sum total available stock
         },
       },
     ]);

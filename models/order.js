@@ -23,7 +23,7 @@ const orderSchema = new mongoose.Schema(
         }, // Subcategory rented
         quantity: { type: Number, required: true }, // Quantity rented
         returned: { type: Number, default: 0 }, // 🆕 Track returned items
-        rentedAt: { type: Date, default: Date.now }, // ✅ Store when rented
+        rentedAt: { type: Date }, // ✅ Store when rented
         returnedAt: { type: Date }, // ✅ Store when returned
       },
     ],
@@ -46,7 +46,7 @@ const orderSchema = new mongoose.Schema(
       default: "onrent",
     },
     returnDueDate: { type: Date },
-    orderDate: { type: Date, default: Date.now }, // When the order was placed
+    orderDate: { type: Date }, // When the order was placed
     paymentDone: { type: Boolean, default: false }, // ✅ Tracks payment status
   },
   { timestamps: true }

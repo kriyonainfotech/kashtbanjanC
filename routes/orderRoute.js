@@ -8,6 +8,7 @@ const {
   getOrdersBySite,
   getReturnedOrderItems,
   getOrdersByCustomer,
+  deleteOrder,
 } = require("../controllers/orderController");
 const routes = express.Router();
 
@@ -19,5 +20,6 @@ routes.post("/addlostItem", addLostOrDamagedItem);
 routes.post("/getOrdersBysite", getOrdersBySite);
 routes.post("/getReturnedOrderItems", getReturnedOrderItems);
 routes.post("/getOrdersByCustomer", getOrdersByCustomer);
+routes.delete("/deleteOrder", deleteOrder);
 
 module.exports = routes;
