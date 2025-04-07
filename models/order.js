@@ -43,11 +43,17 @@ const orderSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: ["onrent", "returned", "paid"],
-      default: "onrent",
+      default: "onrent", // 🆕 Track order status
     },
     returnDueDate: { type: Date },
     orderDate: { type: Date }, // When the order was placed
     paymentDone: { type: Boolean, default: false }, // ✅ Tracks payment status
+    orderHistory: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "OrderHistory",
+      },
+    ],
   },
   { timestamps: true }
 );

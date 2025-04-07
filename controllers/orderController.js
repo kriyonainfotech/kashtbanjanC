@@ -2,6 +2,7 @@ const Order = require("../models/order");
 const Stock = require("../models/stock");
 const mongoose = require("mongoose"); 
 const Site = require("../models/site");
+const OrderHistory = require("../models/orderHistory");
 const moment = require("moment");
 
 // exports.addOrderItems = async (req, res) => {
@@ -196,27 +197,32 @@ exports.addOrderItems = async (req, res) => {
     });
 
     await order.save({ session });
-    console.log("✅ Order created successfully:", order);
 
-    // Step 4: Update site history & dueAmount
+    // 🔥 Create separate OrderHistory record
+    const history = new OrderHistory({
+      actionType: "rent",
+      order: order._id,
+      items: items.map((item) => ({
+        subCategory: item.subCategory,
+        quantity: item.quantity,
+        returned: 0,
+        rentedAt: parsedorderDate,
+      })),
+      timestamp: new Date(),
+    });
+
+    await history.save({ session });
+
+    // 🔄 Link history to order
+    order.orderHistory.push(history._id);
+    await order.save({ session });
+
+    // 🆕 Update site's dueAmount only
     await Site.updateOne(
-      { _id: site },
+      { _id: order.site },
       {
-        $push: {
-          orders: order._id,
-          history: {
-            actionType: "rent",
-            order: order._id,
-            customer: order.customer,
-            details: {
-              items: order.items.map((item) => ({
-                subCategory: item.subCategory,
-                availableStock: item.quantity,
-              })),
-            },
-          },
-        },
-        $inc: { dueAmount: totalCostAmount }, // 🔥 Update dueAmount
+        $push: { orders: order._id }, // ✅ Add order to site.orders array
+        $inc: { dueAmount: totalCostAmount },
       },
       { session }
     );
@@ -511,6 +517,324 @@ exports.addOrderItems = async (req, res) => {
 //   }
 // };
 
+// exports.returnOrderItems = async (req, res) => {
+//   const session = await mongoose.startSession();
+//   session.startTransaction();
+
+//   try {
+//     console.log("🔄 Processing return request:", req.body);
+
+//     const { siteId, items } = req.body;
+
+//     if (!siteId || !Array.isArray(items) || items.length === 0) {
+//       await session.abortTransaction();
+//       session.endSession();
+//       console.log("❌ Invalid return request:", req.body);
+//       return res.status(400).json({
+//         success: false,
+//         message: "Site ID and valid return items are required.",
+//       });
+//     }
+
+//     // Find active order(s) for the given site
+//     const orders = await Order.find({ site: siteId, status: "onrent" }).session(
+//       session
+//     );
+
+//     if (!orders.length) {
+//       await session.abortTransaction();
+//       session.endSession();
+//       console.log("⚠️ No active orders found for this site.");
+//       return res.status(404).json({
+//         success: false,
+//         message: "No active orders found for this site.",
+//       });
+//     }
+
+//     // Assuming only one active order per site, otherwise handle multiple orders
+//     const order = orders[0];
+
+//     let totalReturnCost = 0;
+
+//     for (const returnItem of items) {
+//       const orderItem = order.items.find((item) =>
+//         item.subCategory.equals(returnItem.subCategory)
+//       );
+
+//       if (!orderItem) {
+//         await session.abortTransaction();
+//         session.endSession();
+//         return res.status(400).json({
+//           success: false,
+//           message: `SubCategory ${returnItem.subCategory} not found in order.`,
+//         });
+//       }
+
+//       const maxReturnable = orderItem.quantity - orderItem.returned;
+//       if (returnItem.quantityReturned > maxReturnable) {
+//         await session.abortTransaction();
+//         session.endSession();
+//         console.log(
+//           `❌ Cannot return more than ${maxReturnable} items for ${returnItem.subCategory}.`
+//         );
+//         return res.status(400).json({
+//           success: false,
+//           message: `Cannot return more than ${maxReturnable} items for ${returnItem.subCategory}.`,
+//         });
+//       }
+
+//       // ✅ Fetch Stock Data
+//       const stock = await Stock.findOne({ subCategory: returnItem.subCategory })
+//         .populate("subCategory", "rentalRate")
+//         .session(session);
+
+//       if (!stock) {
+//         await session.abortTransaction();
+//         session.endSession();
+//         return res.status(400).json({
+//           success: false,
+//           message: `Stock not found for SubCategory ${returnItem.subCategory}.`,
+//         });
+//       }
+
+//       const rentalRate = stock.subCategory.rentalRate;
+//       const itemReturnCost = rentalRate * returnItem.quantityReturned;
+//       totalReturnCost += itemReturnCost;
+
+//       orderItem.returned += returnItem.quantityReturned;
+//       orderItem.returnedAt = new Date();
+
+//       await Stock.updateOne(
+//         { subCategory: returnItem.subCategory },
+//         {
+//           $inc: {
+//             OnRent: -returnItem.quantityReturned,
+//             availableStock: returnItem.quantityReturned,
+//           },
+//         },
+//         { session }
+//       );
+//     }
+
+//     const allReturned = order.items.every(
+//       (item) => item.quantity === item.returned
+//     );
+//     if (allReturned) {
+//       order.status = "returned";
+//     }
+
+//     order.totalCostAmount -= totalReturnCost; // 🔥 Adjust order cost
+//     await order.save({ session });
+
+//     await Site.updateOne(
+//       { _id: siteId },
+//       {
+//         $push: {
+//           history: {
+//             actionType: "return",
+//             order: order._id,
+//             customer: order.customer,
+//             details: {
+//               returnedItems: items.map((returnItem) => ({
+//                 subCategory: returnItem.subCategory,
+//                 quantityReturned: returnItem.quantityReturned,
+//               })),
+//             },
+//           },
+//         },
+//         $inc: { dueAmount: -totalReturnCost }, // 🔥 Adjust site's due amount
+//       },
+//       { session }
+//     );
+
+//     await session.commitTransaction();
+//     session.endSession();
+
+//     console.log("✅ Items successfully returned for site:", siteId);
+//     res.status(200).json({
+//       success: true,
+//       message: "Items returned successfully!",
+//       order,
+//     });
+//   } catch (error) {
+//     await session.abortTransaction();
+//     session.endSession();
+//     console.error("❌ Error returning items:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Internal server error.",
+//     });
+//   }
+// };
+
+// exports.returnOrderItems = async (req, res) => {
+//   const session = await mongoose.startSession();
+//   session.startTransaction();
+
+//   try {
+//     console.log("🔄 Processing return request:", req.body);
+
+//     const { orderId, items } = req.body;
+
+//     if (!orderId || !Array.isArray(items) || items.length === 0) {
+//       await session.abortTransaction();
+//       session.endSession();
+//       console.log("❌ Invalid return request:", req.body);
+//       return res.status(400).json({
+//         success: false,
+//         message: "Order ID and valid return items are required.",
+//       });
+//     }
+
+//     const order = await Order.findOne({
+//       _id: orderId,
+//       status: "onrent",
+//     }).session(session);
+
+//     if (!order) {
+//       await session.abortTransaction();
+//       session.endSession();
+//       console.log("⚠️ No active order found for this ID.");
+//       return res.status(404).json({
+//         success: false,
+//         message: "No active order found for this ID.",
+//       });
+//     }
+
+//     let totalReturnCost = 0;
+//      const historyItems = [];
+
+//     for (const returnItem of items) {
+//       const orderItem = order.items.find((item) =>
+//         item.subCategory.equals(returnItem.subCategory)
+//       );
+
+//       if (!orderItem) {
+//         await session.abortTransaction();
+//         session.endSession();
+//         return res.status(400).json({
+//           success: false,
+//           message: `SubCategory ${returnItem.subCategory} not found in order.`,
+//         });
+//       }
+
+//       const maxReturnable = orderItem.quantity - orderItem.returned;
+//       if (returnItem.quantityReturned > maxReturnable) {
+//         await session.abortTransaction();
+//         session.endSession();
+//         return res.status(400).json({
+//           success: false,
+//           message: `Cannot return more than ${maxReturnable} items for ${returnItem.subCategory}.`,
+//         });
+//       }
+
+//       const stock = await Stock.findOne({ subCategory: returnItem.subCategory })
+//         .populate("subCategory", "rentalRate")
+//         .session(session);
+
+//       if (!stock) {
+//         await session.abortTransaction();
+//         session.endSession();
+//         return res.status(400).json({
+//           success: false,
+//           message: `Stock not found for SubCategory ${returnItem.subCategory}.`,
+//         });
+//       }
+
+//       const rentalRate = stock.subCategory.rentalRate;
+//       const itemReturnCost = rentalRate * returnItem.quantityReturned;
+//       totalReturnCost += itemReturnCost;
+
+//       orderItem.returned += returnItem.quantityReturned;
+//       orderItem.returnedAt = new Date();
+
+//       await Stock.updateOne(
+//         { subCategory: returnItem.subCategory },
+//         {
+//           $inc: {
+//             OnRent: -returnItem.quantityReturned,
+//             availableStock: returnItem.quantityReturned,
+//           },
+//         },
+//         { session }
+//       );
+//     }
+
+//      // 📝 Add to return history items
+//       historyItems.push({
+//         subCategory: returnItem.subCategory,
+//         quantity: orderItem.quantity,
+//         returned: orderItem.returned,
+//         rentedAt: orderItem.rentedAt,
+//         returnedAt: orderItem.returnedAt,
+//       });
+//     }
+
+//     const allReturned = order.items.every(
+//       (item) => item.quantity === item.returned
+//     );
+//     if (allReturned) {
+//       order.status = "returned";
+//     }
+
+//     // // 🆕 Push return history into order
+//     // order.orderHistory.push({
+//     //   actionType: "return",
+//     //   order: order._id,
+//     //   details: {
+//     //     returnedItems: items.map((i) => ({
+//     //       subCategory: i.subCategory,
+//     //       quantityReturned: i.quantityReturned,
+//     //     })),
+//     //   },
+//     //   timestamp: new Date(),
+//     // });
+
+//     order.totalCostAmount -= totalReturnCost;
+//   await order.save({ session });
+
+//   // 🧾 Record in OrderHistory
+//     await OrderHistory.create(
+//       [
+//         {
+//           actionType: "return",
+//           order: order._id,
+//           items: historyItems,
+//           timestamp: new Date(),
+//         },
+//       ],
+//       { session }
+//     );
+
+//     // 🆕 Update site's dueAmount only
+//     await Site.updateOne(
+//       { _id: order.site },
+//       {
+//         $inc: { dueAmount: -totalReturnCost },
+//       },
+//       { session }
+//     );
+
+//     await session.commitTransaction();
+//     session.endSession();
+
+//     console.log("✅ Items successfully returned for order:", orderId);
+//     res.status(200).json({
+//       success: true,
+//       message: "Items returned successfully!",
+//       order,
+//     });
+//   } catch (error) {
+//     await session.abortTransaction();
+//     session.endSession();
+//     console.error("❌ Error returning items:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Internal server error.",
+//     });
+//   }
+// };
+
 exports.returnOrderItems = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -518,37 +842,33 @@ exports.returnOrderItems = async (req, res) => {
   try {
     console.log("🔄 Processing return request:", req.body);
 
-    const { siteId, items } = req.body;
+    const { orderId, items } = req.body;
 
-    if (!siteId || !Array.isArray(items) || items.length === 0) {
+    if (!orderId || !Array.isArray(items) || items.length === 0) {
       await session.abortTransaction();
       session.endSession();
-      console.log("❌ Invalid return request:", req.body);
       return res.status(400).json({
         success: false,
-        message: "Site ID and valid return items are required.",
+        message: "Order ID and valid return items are required.",
       });
     }
 
-    // Find active order(s) for the given site
-    const orders = await Order.find({ site: siteId, status: "onrent" }).session(
-      session
-    );
+    const order = await Order.findOne({
+      _id: orderId,
+      status: "onrent",
+    }).session(session);
 
-    if (!orders.length) {
+    if (!order) {
       await session.abortTransaction();
       session.endSession();
-      console.log("⚠️ No active orders found for this site.");
       return res.status(404).json({
         success: false,
-        message: "No active orders found for this site.",
+        message: "No active order found for this ID.",
       });
     }
 
-    // Assuming only one active order per site, otherwise handle multiple orders
-    const order = orders[0];
-
     let totalReturnCost = 0;
+    const historyItems = [];
 
     for (const returnItem of items) {
       const orderItem = order.items.find((item) =>
@@ -568,16 +888,12 @@ exports.returnOrderItems = async (req, res) => {
       if (returnItem.quantityReturned > maxReturnable) {
         await session.abortTransaction();
         session.endSession();
-        console.log(
-          `❌ Cannot return more than ${maxReturnable} items for ${returnItem.subCategory}.`
-        );
         return res.status(400).json({
           success: false,
           message: `Cannot return more than ${maxReturnable} items for ${returnItem.subCategory}.`,
         });
       }
 
-      // ✅ Fetch Stock Data
       const stock = await Stock.findOne({ subCategory: returnItem.subCategory })
         .populate("subCategory", "rentalRate")
         .session(session);
@@ -596,7 +912,7 @@ exports.returnOrderItems = async (req, res) => {
       totalReturnCost += itemReturnCost;
 
       orderItem.returned += returnItem.quantityReturned;
-      orderItem.returnedAt = new Date();
+      orderItem.returnedAt = returnItem.returnedAt;
 
       await Stock.updateOne(
         { subCategory: returnItem.subCategory },
@@ -608,6 +924,15 @@ exports.returnOrderItems = async (req, res) => {
         },
         { session }
       );
+
+      // 📝 Add to return history items
+      historyItems.push({
+        subCategory: returnItem.subCategory,
+        quantity: orderItem.quantity,
+        returned: returnItem.quantityReturned,
+        rentedAt: orderItem.rentedAt,
+        returnedAt: orderItem.returnedAt,
+      });
     }
 
     const allReturned = order.items.every(
@@ -617,26 +942,27 @@ exports.returnOrderItems = async (req, res) => {
       order.status = "returned";
     }
 
-    order.totalCostAmount -= totalReturnCost; // 🔥 Adjust order cost
+    order.totalCostAmount -= totalReturnCost;
     await order.save({ session });
 
-    await Site.updateOne(
-      { _id: siteId },
-      {
-        $push: {
-          history: {
-            actionType: "return",
-            order: order._id,
-            customer: order.customer,
-            details: {
-              returnedItems: items.map((returnItem) => ({
-                subCategory: returnItem.subCategory,
-                quantityReturned: returnItem.quantityReturned,
-              })),
-            },
-          },
+    // 🧾 Record in OrderHistory
+    await OrderHistory.create(
+      [
+        {
+          actionType: "return",
+          order: order._id,
+          items: historyItems,
+          timestamp: new Date(),
         },
-        $inc: { dueAmount: -totalReturnCost }, // 🔥 Adjust site's due amount
+      ],
+      { session }
+    );
+
+    // 💰 Update site's dueAmount
+    await Site.updateOne(
+      { _id: order.site },
+      {
+        $inc: { dueAmount: -totalReturnCost },
       },
       { session }
     );
@@ -644,7 +970,7 @@ exports.returnOrderItems = async (req, res) => {
     await session.commitTransaction();
     session.endSession();
 
-    console.log("✅ Items successfully returned for site:", siteId);
+    console.log("✅ Items successfully returned for order:", order);
     res.status(200).json({
       success: true,
       message: "Items returned successfully!",
@@ -703,53 +1029,119 @@ exports.getCustomerRentedItems = async (req, res) => {
   }
 };
 
-exports.getSubcategoriesOnRentBySite = async (req, res) => {
+// exports.getSubcategoriesOnRentBySite = async (req, res) => {
+//   try {
+//     console.log("📝 [GET SUBCATEGORIES ON RENT BY SITE] API hit");
+
+//     const { siteId } = req.body;
+
+//     console.log("Site ID:", siteId);
+
+//     if (!siteId) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Site ID is required",
+//       });
+//     }
+
+//     // Find all orders for the given site that are on rent
+//     const orders = await Order.find({ site: siteId, status: "onrent" })
+//       .populate("items.subCategory", "name")
+//       .lean();
+
+//     if (!orders.length) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "No orders found for this site or no items on rent",
+//       });
+//     }
+//     console.log("Orders fetched");
+
+//     // Collect subcategories and quantities
+//     const subCategoryMap = new Map();
+
+//     orders.forEach((order) => {
+//       order.items.forEach((item) => {
+//         const subCategoryId = item.subCategory._id.toString();
+//         const subCategoryName = item.subCategory.name;
+//         const qtyOnRent = item.quantity - item.returned;
+
+//         if (subCategoryMap.has(subCategoryId)) {
+//           subCategoryMap.get(subCategoryId).qtyOnRent += qtyOnRent;
+//         } else {
+//           subCategoryMap.set(subCategoryId, {
+//             subCategoryId,
+//             subCategoryName,
+//             qtyOnRent,
+//           });
+//         }
+//       });
+//     });
+
+//     const subCategoriesOnRent = Array.from(subCategoryMap.values());
+//     console.log("✅ Subcategories on rent fetched successfully!");
+
+//     res.status(200).json({
+//       success: true,
+//       message: "✅ Subcategories on rent fetched successfully!",
+//       data: subCategoriesOnRent,
+//     });
+//   } catch (error) {
+//     console.error("❌ [Error] Fetching subcategories on rent:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Internal Server Error",
+//       error: error.message,
+//     });
+//   }
+// };
+
+exports.getSubcategoriesOnRentByOrder = async (req, res) => {
   try {
-    console.log("📝 [GET SUBCATEGORIES ON RENT BY SITE] API hit");
+    console.log("📝 [GET SUBCATEGORIES ON RENT BY ORDER] API hit");
 
-    const { siteId } = req.body;
+    const { orderId } = req.body;
 
-    console.log("Site ID:", siteId);
+    console.log("Order ID:", orderId);
 
-    if (!siteId) {
+    if (!orderId) {
       return res.status(400).json({
         success: false,
-        message: "Site ID is required",
+        message: "Order ID is required",
       });
     }
 
-    // Find all orders for the given site that are on rent
-    const orders = await Order.find({ site: siteId, status: "onrent" })
+    // Find the order with status "onrent"
+    const order = await Order.findOne({ _id: orderId, status: "onrent" })
       .populate("items.subCategory", "name")
       .lean();
 
-    if (!orders.length) {
+    console.log("order", order);
+    if (!order) {
+      console.log("⚠️ No active order found with this ID or nothing on rent");
       return res.status(404).json({
         success: false,
-        message: "No orders found for this site or no items on rent",
+        message: "No active order found with this ID or nothing on rent",
       });
     }
-    console.log("Orders fetched");
+
+    console.log("Order fetched");
 
     // Collect subcategories and quantities
     const subCategoryMap = new Map();
 
-    orders.forEach((order) => {
-      order.items.forEach((item) => {
-        const subCategoryId = item.subCategory._id.toString();
-        const subCategoryName = item.subCategory.name;
-        const qtyOnRent = item.quantity - item.returned;
+    order.items.forEach((item) => {
+      const subCategoryId = item.subCategory._id.toString();
+      const subCategoryName = item.subCategory.name;
+      const qtyOnRent = item.quantity - item.returned;
 
-        if (subCategoryMap.has(subCategoryId)) {
-          subCategoryMap.get(subCategoryId).qtyOnRent += qtyOnRent;
-        } else {
-          subCategoryMap.set(subCategoryId, {
-            subCategoryId,
-            subCategoryName,
-            qtyOnRent,
-          });
-        }
-      });
+      if (qtyOnRent > 0) {
+        subCategoryMap.set(subCategoryId, {
+          subCategoryId,
+          subCategoryName,
+          qtyOnRent,
+        });
+      }
     });
 
     const subCategoriesOnRent = Array.from(subCategoryMap.values());
@@ -910,57 +1302,70 @@ exports.getReturnedOrderItems = async (req, res) => {
     const { siteId } = req.body;
     console.log(`🔍 Searching for site with ID: ${siteId}`);
 
-    // Find the site and populate orders
-    const site = await Site.findById(siteId)
-      .populate({
-        path: "orders",
-        match: { "items.returned": { $gt: 0 } }, // ✅ Only orders with returned items
-        populate: [
-          {
-            path: "items.subCategory",
-            select: "name rentalRate",
-          },
-          {
-            path: "customer",
-            select: "name address phone",
-          },
-          {
-            path: "site",
-            select: "sitename",
-          },
-        ],
-      })
-      .exec();
+    // Step 1: Find the site with returned orders only
+    const site = await Site.findById(siteId).populate({
+      path: "orders",
+      match: { "items.returned": { $gt: 0 } },
+      populate: [
+        {
+          path: "items.subCategory",
+          select: "name rentalRate",
+        },
+        {
+          path: "customer",
+          select: "name address phone",
+        },
+        {
+          path: "site",
+          select: "sitename",
+        },
+      ],
+    });
 
     if (!site) {
       console.warn(`⚠️ Site not found for ID: ${siteId}`);
       return res.status(404).json({ message: "Site not found" });
     }
 
-    console.log(`✅ Site found! (${site._id})`);
-    console.log(`📦 Orders count with returned items: ${site.orders.length}`);
+    // Step 2: For each order, fetch related orderHistory entries (actionType: 'return')
+    const ordersWithHistory = await Promise.all(
+      site.orders.map(async (order) => {
+        const orderHistories = await OrderHistory.find({
+          order: order._id,
+          actionType: "return",
+        })
+          .populate("items.subCategory", "name rentalRate")
+          .sort({ createdAt: -1 }); // Optional: latest first
 
+        return {
+          ...order.toObject(),
+          orderHistory: orderHistories,
+        };
+      })
+    );
+
+    console.log(`✅ Orders with returned items: ${ordersWithHistory.length}`);
     res.status(200).json({
       success: true,
       message: "✅ Orders with returned items fetched successfully!",
-      orders: site.orders,
+      orders: ordersWithHistory,
     });
   } catch (error) {
-    console.error(`❌ Error fetching site orders:`, error);
+    console.error(`❌ Error fetching returned orders:`, error);
     res.status(500).json({ message: "Internal server error" });
   }
 };
 
 exports.getOrdersByCustomer = async (req, res) => {
   try {
-    const { customerId } = req.body; // Customer ID
+    const { customerId } = req.body;
     console.log(`📝 [GET ORDERS BY CUSTOMER] API hit`);
     console.log(`🔍 Fetching orders for customer ID: ${customerId}`);
 
     const orders = await Order.find({ customer: customerId })
-      .populate("customer", "name phone address") // Populate customer details if needed
-      .populate("items.subCategory", "name") // Populate subCategory details
-      .sort({ createdAt: -1 }) // Sort by latest orders
+      .populate("customer", "name phone address")
+      .populate("items.subCategory", "name rentalRate")
+      .sort({ createdAt: -1 })
       .exec();
 
     if (!orders.length) {
@@ -970,8 +1375,26 @@ exports.getOrdersByCustomer = async (req, res) => {
         .json({ message: "No orders found for this customer." });
     }
 
+    // ✅ Fetch return orderHistory for each order
+    const ordersWithHistory = await Promise.all(
+      orders.map(async (order) => {
+        const orderHistories = await OrderHistory.find({
+          order: order._id,
+          actionType: "return",
+        })
+          .populate("items.subCategory", "name rentalRate")
+          .sort({ createdAt: -1 });
+
+        return {
+          ...order.toObject(),
+          orderHistory: orderHistories,
+        };
+      })
+    );
+    console.log(ordersWithHistory, "ordersWithHistory.length);");
+
     console.log(`✅ Found ${orders.length} orders for customer.`);
-    res.status(200).send({ success: true, orders: orders });
+    res.status(200).send({ success: true, orders: ordersWithHistory });
   } catch (error) {
     console.error("❌ Error fetching customer orders:", error);
     res.status(500).json({ message: "Internal server error" });
@@ -1013,5 +1436,65 @@ exports.deleteOrder = async (req, res) => {
   } catch (error) {
     console.log("❌ Error deleting order:", error);
     res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+exports.getOrderHistory = async (req, res) => {
+  try {
+    console.log("📜 [GET ORDER HISTORY] API hit");
+
+    const { orderId } = req.body;
+    console.log("Order ID:", orderId);
+
+    if (!orderId) {
+      return res.status(400).json({
+        success: false,
+        message: "Order ID is required",
+      });
+    }
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    const rentHistory = await OrderHistory.find({
+      order: orderId,
+      actionType: "rent",
+    })
+      .populate("items.subCategory", "name")
+      .sort({ timestamp: 1 }) // oldest to newest
+      .lean();
+
+    const formattedHistory = rentHistory.map((entry) => ({
+      timestamp: new Date(entry.timestamp).toLocaleString(),
+      rentedItems: entry.items.map((item) => ({
+        subCategory: item.subCategory?.name || "Unknown",
+        quantity: item.quantity,
+        rentedAt: item.rentedAt
+          ? new Date(item.rentedAt).toLocaleString()
+          : "N/A",
+        returnedAt: item.returnedAt
+          ? new Date(item.returnedAt).toLocaleString()
+          : "N/A",
+        returned: item.returned || 0,
+      })),
+    }));
+
+    res.status(200).json({
+      success: true,
+      message: "✅ Rent history fetched successfully",
+      data: formattedHistory,
+    });
+  } catch (error) {
+    console.error("❌ [Error] Fetching rent history:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      error: error.message,
+    });
   }
 };
