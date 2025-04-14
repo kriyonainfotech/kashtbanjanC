@@ -54,6 +54,7 @@ const orderSchema = new mongoose.Schema(
         ref: "OrderHistory",
       },
     ],
+    payments: [{ type: mongoose.Schema.Types.ObjectId, ref: "Payment" }], // Reference to Payment model
   },
   { timestamps: true }
 );

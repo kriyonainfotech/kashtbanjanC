@@ -33,7 +33,7 @@ const siteSchema = new mongoose.Schema(
         timestamp: { type: Date, default: Date.now }, // ✅ Ensure sorting by date
       },
     ],
-    payments: [{ type: mongoose.Schema.Types.ObjectId, ref: "Payment" }], // Reference to Payment model
+
     dueAmount: { type: Number, default: 0 }, // 🔥 Track due amount
   },
   { timestamps: true }

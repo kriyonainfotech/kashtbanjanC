@@ -4,7 +4,7 @@ const orderHistorySchema = new mongoose.Schema(
   {
     actionType: {
       type: String,
-      enum: ["rent", "return", "payment"],
+      // enum: ["rent", "return", "payment"],
       required: true,
     },
     order: {

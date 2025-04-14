@@ -18,7 +18,13 @@ const paymentSchema = new mongoose.Schema(
     }, // Payment method
     paymentType: {
       type: String,
-      enum: ["Deposit", "Discount", "FullPayment"], // Define types
+      enum: [
+        "Deposit",
+        "Discount",
+        "FullPayment",
+        "AdvancePayment",
+        "HalfPayment",
+      ], // Define types
       required: true,
     },
     remarks: { type: String }, // Any additional notes

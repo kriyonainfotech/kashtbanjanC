@@ -1,5 +1,7 @@
 const Payment = require("../models/payment");
 const Site = require("../models/site");
+const Order = require("../models/order");
+const OrderHistory = require("../models/orderHistory");
 const mongoose = require("mongoose");
 
 // exports.addPayment = async (req, res) => {
@@ -52,13 +54,117 @@ const mongoose = require("mongoose");
 //   }
 // };
 
+// exports.addPayment = async (req, res) => {
+//   const session = await mongoose.startSession();
+//   session.startTransaction(); // 🔄 Start transaction
+
+//   try {
+//     console.log("📥 Received Payment Request:", req.body);
+
+//     const {
+//       site,
+//       order,
+//       customer,
+//       amount,
+//       paymentMethod,
+//       paymentType,
+//       remarks,
+//     } = req.body;
+
+//     if (!site || !customer || !amount || !paymentMethod) {
+//       console.log("❌ Missing required fields!");
+//       return res.status(400).json({
+//         success: false,
+//         message: "Site, customer, amount, and payment method are required.",
+//       });
+//     }
+
+//     console.log("✅ Validation Passed! Checking site existence...");
+
+//     const existingSite = await Site.findById(site).session(session);
+//     if (!existingSite) {
+//       console.log("❌ Site not found:", site);
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res
+//         .status(404)
+//         .json({ success: false, message: "Site not found." });
+//     }
+
+//     console.log("✅ Site verified! Creating payment record...");
+
+//     const payment = await Payment.create(
+//       [
+//         {
+//           site,
+//           order,
+//           customer,
+//           amount,
+//           paymentMethod,
+//           paymentType,
+//           remarks,
+//           status: "Completed",
+//           date: new Date(),
+//         },
+//       ],
+//       { session }
+//     );
+
+//     console.log("💰 Payment Created Successfully:", payment);
+
+//     // 🔥 Reduce dueAmount by payment amount
+//     const updatedDueAmount = Math.max(0, existingSite.dueAmount - amount);
+
+//     // ✅ Add history entry
+//     const historyEntry = {
+//       actionType: "payment",
+//       order: order || null,
+//       details: { amount, paymentMethod, paymentType, remarks },
+//       timestamp: new Date(),
+//     };
+
+//     // ✅ Update the site's dueAmount, add payment ID, and push history
+//     await Site.updateOne(
+//       { _id: site },
+//       {
+//         $set: { dueAmount: updatedDueAmount },
+//         $push: {
+//           payments: payment[0]._id,
+//           history: historyEntry, // 🔥 Adding history here
+//         },
+//       },
+//       { session }
+//     );
+
+//     console.log("🔗 Payment linked to Site, dueAmount updated & history added");
+
+//     await session.commitTransaction(); // ✅ Commit transaction
+//     session.endSession();
+
+//     res.status(201).json({
+//       success: true,
+//       message: "✅ Payment added successfully!",
+//       payment: payment[0],
+//       updatedDueAmount,
+//     });
+//   } catch (error) {
+//     await session.abortTransaction(); // 🚨 Rollback on error
+//     session.endSession();
+
+//     console.error("🔥 Error adding payment:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Internal Server Error",
+//       error: error.message,
+//     });
+//   }
+// };
+
 exports.addPayment = async (req, res) => {
   const session = await mongoose.startSession();
-  session.startTransaction(); // 🔄 Start transaction
+  session.startTransaction();
 
   try {
-    console.log("📥 Received Payment Request:", req.body);
-
     const {
       site,
       order,
@@ -67,96 +173,99 @@ exports.addPayment = async (req, res) => {
       paymentMethod,
       paymentType,
       remarks,
+      date,
     } = req.body;
 
-    if (!site || !customer || !amount || !paymentMethod) {
-      console.log("❌ Missing required fields!");
+    console.log("📝 New Payment Request Received", req.body);
+
+    // 🔍 Basic validation
+    if (!site || !customer || !amount || !paymentMethod || !paymentType) {
+      await session.abortTransaction();
+      session.endSession();
+      console.log("❗ Missing required payment fields.");
       return res.status(400).json({
         success: false,
-        message: "Site, customer, amount, and payment method are required.",
+        message: "Missing required payment fields.",
       });
     }
 
-    console.log("✅ Validation Passed! Checking site existence...");
+    // 🧾 Create the payment
+    const payment = new Payment({
+      site,
+      order,
+      customer,
+      amount,
+      paymentMethod,
+      paymentType,
+      remarks,
+      date,
+    });
 
-    const existingSite = await Site.findById(site).session(session);
-    if (!existingSite) {
-      console.log("❌ Site not found:", site);
-      await session.abortTransaction();
-      session.endSession();
-      return res
-        .status(404)
-        .json({ success: false, message: "Site not found." });
-    }
+    await payment.save({ session });
+    console.log("💰 Payment Saved:", payment._id);
 
-    console.log("✅ Site verified! Creating payment record...");
-
-    const payment = await Payment.create(
-      [
-        {
-          site,
-          order,
-          customer,
-          amount,
-          paymentMethod,
-          paymentType,
-          remarks,
-          status: "Completed",
-          date: new Date(),
-        },
-      ],
-      { session }
-    );
-
-    console.log("💰 Payment Created Successfully:", payment);
-
-    // 🔥 Reduce dueAmount by payment amount
-    const updatedDueAmount = Math.max(0, existingSite.dueAmount - amount);
-
-    // ✅ Add history entry
-    const historyEntry = {
-      actionType: "payment",
-      order: order || null,
-      details: { amount, paymentMethod, paymentType, remarks },
-      timestamp: new Date(),
-    };
-
-    // ✅ Update the site's dueAmount, add payment ID, and push history
+    // 💸 Reduce dueAmount in Site
     await Site.updateOne(
       { _id: site },
-      {
-        $set: { dueAmount: updatedDueAmount },
-        $push: {
-          payments: payment[0]._id,
-          history: historyEntry, // 🔥 Adding history here
-        },
-      },
+      { $inc: { dueAmount: -amount } },
       { session }
     );
+    console.log(`🏦 Site (${site}) dueAmount reduced by ₹${amount}`);
 
-    console.log("🔗 Payment linked to Site, dueAmount updated & history added");
+    // 🔗 If order is linked, push payment ID and check payment completion
+    if (order) {
+      const orderDoc = await Order.findById(order)
+        .populate("payments")
+        .session(session);
 
-    await session.commitTransaction(); // ✅ Commit transaction
+      if (!orderDoc) {
+        throw new Error("Order not found");
+      }
+
+      // Push new payment
+      orderDoc.payments = orderDoc.payments || [];
+      orderDoc.payments.push(payment._id);
+
+      // 🧮 Calculate total paid amount (existing + new)
+      const existingTotal = orderDoc.payments.reduce((acc, pay) => {
+        return acc + (pay.amount || 0);
+      }, 0);
+
+      const totalPaid = existingTotal + amount;
+      console.log(
+        `💳 Total paid after this: ₹${totalPaid}, Order Total: ₹${orderDoc.totalCostAmount}`
+      );
+
+      // ✅ If fully paid, mark paymentDone
+      if (totalPaid >= orderDoc.totalCostAmount) {
+        orderDoc.paymentDone = true;
+        console.log("✅ Payment completed. Marking order as fully paid.");
+      }
+
+      await orderDoc.save({ session });
+      console.log(`📌 Payment ID (${payment._id}) pushed to Order (${order})`);
+    }
+
+    await session.commitTransaction();
     session.endSession();
 
-    res.status(201).json({
+    console.log("✅ Payment transaction committed successfully.");
+    return res.status(201).json({
       success: true,
-      message: "✅ Payment added successfully!",
-      payment: payment[0],
-      updatedDueAmount,
+      message: "✅ Payment added successfully",
+      payment,
     });
   } catch (error) {
-    await session.abortTransaction(); // 🚨 Rollback on error
+    await session.abortTransaction();
     session.endSession();
-
-    console.error("🔥 Error adding payment:", error);
-    res.status(500).json({
+    console.error("❌ Error adding payment:", error);
+    return res.status(500).json({
       success: false,
-      message: "Internal Server Error",
-      error: error.message,
+      message: "Something went wrong while adding payment.",
     });
   }
 };
+
 
 exports.editPayment = async (req, res) => {
   const session = await mongoose.startSession();

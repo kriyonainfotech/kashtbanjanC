@@ -1,9 +1,9 @@
+const mongoose = require("mongoose");
+const moment = require("moment");
 const Order = require("../models/order");
 const Stock = require("../models/stock");
-const mongoose = require("mongoose"); 
-const Site = require("../models/site");
 const OrderHistory = require("../models/orderHistory");
-const moment = require("moment");
+const Site = require("../models/site");
 
 // exports.addOrderItems = async (req, res) => {
 //   const session = await mongoose.startSession();
@@ -248,6 +248,148 @@ exports.addOrderItems = async (req, res) => {
     });
   }
 };
+
+//  exports.editOrder = async (req, res) => {
+//    const session = await mongoose.startSession();
+//    session.startTransaction();
+
+//    try {
+//      const { orderId, updatedItems, updatedOrderDate } = req.body;
+//      console.log("🔄 Editing Order:", req.body);
+
+//      if (
+//        !orderId ||
+//        !Array.isArray(updatedItems) ||
+//        updatedItems.length === 0
+//      ) {
+//        console.log("Order ID and updated items are required.");
+//        return res.status(400).json({
+//          success: false,
+//          message: "Order ID and updated items are required.",
+//        });
+//      }
+
+//      const order = await Order.findById(orderId)
+//        .populate("items.subCategory")
+//        .session(session);
+//      if (!order) {
+//        await session.abortTransaction();
+//        session.endSession();
+//        return res
+//          .status(404)
+//          .json({ success: false, message: "Order not found." });
+//      }
+
+//      // Step 1: Restore previous stock
+//      for (let item of order.items) {
+//        const stock = await Stock.findOne({
+//          subCategory: item.subCategory._id,
+//        }).session(session);
+//        stock.availableStock += item.quantity;
+//        stock.OnRent -= item.quantity;
+//        await stock.save({ session });
+//      }
+
+//      // Step 2: Validate and update with new stock
+//      let newTotalCost = 0;
+//      const stockMap = new Map();
+
+//      for (let item of updatedItems) {
+//        let stock = stockMap.get(item.subCategory);
+//        if (!stock) {
+//          stock = await Stock.findOne({ subCategory: item.subCategory })
+//            .populate("subCategory", "rentalRate")
+//            .session(session);
+//          if (!stock) {
+//            await session.abortTransaction();
+//            session.endSession();
+//            return res.status(400).json({
+//              success: false,
+//              message: `Stock not found for subCategory: ${item.subCategory}`,
+//            });
+//          }
+//          stockMap.set(item.subCategory, stock);
+//        }
+
+//        if (stock.availableStock < item.quantity) {
+//          await session.abortTransaction();
+//          session.endSession();
+//          return res.status(400).json({
+//            success: false,
+//            message: `Insufficient stock for subCategory: ${item.subCategory}. Available: ${stock.availableStock}, Required: ${item.quantity}`,
+//          });
+//        }
+
+//        stock.availableStock -= item.quantity;
+//        stock.OnRent += item.quantity;
+//        await stock.save({ session });
+
+//        const itemCost = stock.subCategory.rentalRate * item.quantity;
+//        newTotalCost += itemCost;
+
+//        item.rentedAt = moment(
+//          updatedOrderDate.split(".")[0],
+//          "YYYY-MM-DD HH:mm:ss"
+//        ).toDate();
+//      }
+
+//      // Step 3: Update Order
+//      order.items = updatedItems;
+//      order.totalCostAmount = newTotalCost;
+//      order.orderDate = moment(
+//        updatedOrderDate.split(".")[0],
+//        "YYYY-MM-DD HH:mm:ss"
+//      ).toDate();
+//      await order.save({ session });
+
+//      // Step 4: Update OrderHistory
+//      await OrderHistory.deleteMany({
+//        order: orderId,
+//        actionType: "rent",
+//      }).session(session); // Optional: delete old history
+
+//      const history = new OrderHistory({
+//        actionType: "rent",
+//        order: order._id,
+//        items: updatedItems.map((item) => ({
+//          subCategory: item.subCategory,
+//          quantity: item.quantity,
+//          returned: 0,
+//          rentedAt: item.rentedAt,
+//        })),
+//        timestamp: new Date(),
+//      });
+//      await history.save({ session });
+
+//      order.orderHistory = [history._id];
+//      await order.save({ session });
+
+//      // Update Site dueAmount (optional, reset to match new order)
+//      const previousDue = order.totalCostAmount;
+//      await Site.updateOne(
+//        { _id: order.site },
+//        { $set: { dueAmount: newTotalCost } }, // Or $inc with difference
+//        { session }
+//      );
+
+//      await session.commitTransaction();
+//      session.endSession();
+
+//      res.status(200).json({
+//        success: true,
+//        message: "✅ Order updated successfully",
+//        order,
+//      });
+//    } catch (err) {
+//      await session.abortTransaction();
+//      session.endSession();
+//      console.error("❌ Error editing order:", err);
+//      res.status(500).json({
+//        success: false,
+//        message: "Something went wrong during order update.",
+//      });
+//    }
+//  };
 
 // exports.returnOrderItems = async (req, res) => {
 //   const session = await mongoose.startSession();
@@ -835,6 +977,349 @@ exports.addOrderItems = async (req, res) => {
 //   }
 // };
 
+// Updated editOrder function with full support for:
+// - Adding new items
+// - Removing old items
+// - Updating quantity of existing items
+// - Updating stocks and order history
+
+exports.editOrder = async (req, res) => {
+  console.log("🔄 Editing Order:", req.body);
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const { orderId, updatedItems, updatedOrderDate } = req.body;
+
+    console.log("📝 Request to edit order received:", {
+      orderId,
+      updatedItems,
+    });
+
+    if (!orderId || !Array.isArray(updatedItems) || updatedItems.length === 0) {
+      console.log("⚠️ Missing required fields.");
+      return res.status(400).json({
+        success: false,
+        message: "Order ID and updated items are required.",
+      });
+    }
+
+    const order = await Order.findById(orderId)
+      .populate("items.subCategory")
+      .session(session);
+
+    if (!order) {
+      console.log("❌ Order not found:", orderId);
+      await session.abortTransaction();
+      session.endSession();
+      return res
+        .status(404)
+        .json({ success: false, message: "Order not found." });
+    }
+
+    console.log("📦 Existing order fetched:", order._id);
+
+    const originalItems = order.items.map((item) => ({
+      subCategory: item.subCategory._id.toString(),
+      quantity: item.quantity,
+    }));
+
+    const originalMap = new Map();
+    for (let item of originalItems) {
+      originalMap.set(item.subCategory, item);
+    }
+
+    const updatedMap = new Map();
+    for (let item of updatedItems) {
+      updatedMap.set(item.subCategory, item);
+    }
+
+    console.log("🔍 Comparing updated items...");
+    const addedItems = [];
+    const removedItems = [];
+    const quantityUpdatedItems = [];
+
+    for (let [subCategoryId, updatedItem] of updatedMap.entries()) {
+      const originalItem = originalMap.get(subCategoryId);
+      if (!originalItem) {
+        addedItems.push(updatedItem);
+      } else if (originalItem.quantity !== updatedItem.quantity) {
+        quantityUpdatedItems.push({
+          ...updatedItem,
+          previousQuantity: originalItem.quantity,
+        });
+      }
+    }
+
+    for (let [subCategoryId, originalItem] of originalMap.entries()) {
+      if (!updatedMap.has(subCategoryId)) {
+        removedItems.push(originalItem);
+      }
+    }
+
+    console.log("➕ Added Items:", addedItems);
+    console.log("✏️ Quantity Updated Items:", quantityUpdatedItems);
+    console.log("➖ Removed Items:", removedItems);
+
+    let newTotalCost = 0;
+
+    console.log("📥 Processing added & updated items...");
+    for (let item of addedItems) {
+      const stock = await Stock.findOne({ subCategory: item.subCategory })
+        .populate("subCategory", "rentalRate")
+        .session(session);
+
+      const requiredQty = item.quantity;
+      if (stock.availableStock < requiredQty) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient stock for subCategory: ${item.subCategory}. Available: ${stock.availableStock}, Required: ${requiredQty}`,
+        });
+      }
+
+      stock.availableStock -= requiredQty;
+      stock.OnRent += requiredQty;
+      await stock.save({ session });
+
+      // const rentalRate = stock.subCategory.rentalRate;
+      // newTotalCost += rentalRate * item.quantity;
+
+      item.rentedAt = moment(
+        updatedOrderDate.split(".")[0],
+        "YYYY-MM-DD HH:mm:ss"
+      ).toDate();
+    }
+
+    for (let item of quantityUpdatedItems) {
+      const stock = await Stock.findOne({ subCategory: item.subCategory })
+        .populate("subCategory", "rentalRate")
+        .session(session);
+      console.log("📦 Stock found:", stock);
+
+      const diff = item.quantity - item.previousQuantity;
+
+      if (diff > 0) {
+        // 🟢 More quantity added
+        console.log("🟢 Quantity increased:", diff);
+        if (stock.availableStock < diff) {
+          await session.abortTransaction();
+          session.endSession();
+          console.log(
+            `❌ Insufficient stock to increase quantity for ${item.subCategory}: required ${diff}, available ${stock.availableStock}`
+          );
+          return res.status(400).json({
+            success: false,
+            message: `Insufficient stock to increase quantity for subCategory: ${item.subCategory}. Available: ${stock.availableStock}, Required: ${diff}`,
+          });
+        }
+
+        stock.availableStock -= diff;
+        stock.OnRent += diff;
+      } else if (diff < 0) {
+        // 🔴 Quantity reduced (return some stock)
+        console.log("🔴 Quantity reduced:", diff);
+        const returnQty = Math.abs(diff);
+        if (stock.OnRent < returnQty) {
+          await session.abortTransaction();
+          session.endSession();
+          console.log(
+            `❌ Trying to return more than on rent for ${item.subCategory}: OnRent ${stock.OnRent}, trying to return ${returnQty}`
+          );
+          return res.status(400).json({
+            success: false,
+            message: `Invalid quantity reduction for subCategory: ${item.subCategory}. OnRent: ${stock.OnRent}, Trying to return: ${returnQty}`,
+          });
+        }
+
+        stock.availableStock += returnQty;
+        stock.OnRent -= returnQty;
+      }
+
+      await stock.save({ session });
+
+      console.log("📦 Stock updated:", stock);
+
+      // const rentalRate = stock.subCategory.rentalRate;
+      // console.log("📦 Rental rate:", rentalRate);
+      // const cost = rentalRate * item.quantity;
+      // console.log("💰 Cost for this item:", cost);
+      // const previousCost = rentalRate * item.previousQuantity;
+      // console.log("💰 Previous cost for this item:", previousCost);
+      // newTotalCost += cost; // ✅ Corrected
+      // console.log("💰 Updated total cost:", newTotalCost);
+
+      item.rentedAt = moment(
+        updatedOrderDate.split(".")[0],
+        "YYYY-MM-DD HH:mm:ss"
+      ).toDate();
+    }
+
+    console.log("📤 Processing removed items...");
+
+    for (let item of removedItems) {
+      console.log("🛑 [REMOVED ITEM DETECTED]");
+      console.log(`🔍 SubCategory ID: ${item.subCategory}`);
+      console.log(`📦 Quantity to return: ${item.quantity}`);
+
+      const stock = await Stock.findOne({
+        subCategory: item.subCategory,
+      }).session(session);
+      console.log("📦 Stock found:", stock);
+
+      if (!stock) {
+        console.log("❌ Stock not found for subCategory:", item.subCategory);
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(404).json({
+          success: false,
+          message: "Stock not found for removed item.",
+        });
+      }
+
+      console.log(
+        `📊 Before Update => availableStock: ${stock.availableStock}, OnRent: ${stock.OnRent}`
+      );
+
+      // Safety check to avoid negative OnRent
+      if (stock.OnRent < item.quantity) {
+        console.log("🚫 Error: Trying to return more than on rent");
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(400).json({
+          success: false,
+          message: `Invalid return quantity for subCategory: ${item.subCategory}. OnRent: ${stock.OnRent}, Attempted to return: ${item.quantity}`,
+        });
+      }
+
+      stock.availableStock += item.quantity;
+      stock.OnRent -= item.quantity;
+
+      console.log(
+        `✅ Updated => availableStock: ${stock.availableStock}, OnRent: ${stock.OnRent}`
+      );
+
+      await stock.save({ session });
+
+      const subCat = await mongoose
+        .model("SubCategory")
+        .findById(item.subCategory);
+
+      // const itemRate = subCat?.rentalRate || 0;
+      // newTotalCost -= itemRate * item.quantity;
+
+      // console.log(`💰 Updated total cost after removal: ${newTotalCost}`);
+    }
+
+    console.log("🧾 Updating order...");
+    order.items = updatedItems.map((item) => ({
+      subCategory: item.subCategory,
+      quantity: item.quantity,
+      rentedAt: item.rentedAt,
+      returned: 0,
+    }));
+
+    for (const item of order.items) {
+      // Debugging: Log the item being processed
+      console.log("Processing item:", item);
+
+      // Find the stock for the current subCategory
+      const stock = await Stock.findOne({
+        subCategory: item.subCategory, // Ensure correct field for `subCategory`
+      }).populate("subCategory", "rentalRate");
+
+      // Debugging: Log the stock information
+      console.log("Stock found:", stock);
+
+      // Check if stock or subCategory is missing
+      if (!stock || !stock.subCategory) {
+        console.log(
+          "❌ Stock or subCategory not found for item:",
+          item.subCategory
+        );
+        continue;
+      }
+
+      // Get the rental rate and calculate the cost
+      const rentalRate = stock.subCategory.rentalRate;
+      console.log("Rental rate for subCategory:", rentalRate);
+
+      // Update total cost with the rental rate * quantity
+      newTotalCost += rentalRate * item.quantity;
+
+      // Debugging: Log the running total cost
+      console.log("Updated total cost:", newTotalCost);
+    }
+
+    console.log("Final total cost:", newTotalCost);
+
+    order.totalCostAmount = newTotalCost;
+    order.orderDate = moment(
+      updatedOrderDate.split(".")[0],
+      "YYYY-MM-DD HH:mm:ss"
+    ).toDate();
+    await order.save({ session });
+
+    console.log("📚 Updating order history...");
+    await OrderHistory.deleteMany({
+      order: orderId,
+      actionType: "rent",
+    }).session(session);
+
+    const rentHistory = new OrderHistory({
+      actionType: "rent",
+      order: order._id,
+      items: addedItems.concat(quantityUpdatedItems).map((item) => ({
+        subCategory: item.subCategory,
+        quantity: item.quantity,
+        rentedAt: item.rentedAt,
+        returned: 0,
+      })),
+      timestamp: new Date(),
+    });
+    await rentHistory.save({ session });
+
+    const returnHistory = new OrderHistory({
+      actionType: "return",
+      order: order._id,
+      items: removedItems.map((item) => ({
+        subCategory: item.subCategory,
+        quantity: item.quantity,
+        returned: item.quantity,
+        returnedAt: new Date(),
+      })),
+      timestamp: new Date(),
+    });
+    await returnHistory.save({ session });
+
+    order.orderHistory = [rentHistory._id, returnHistory._id];
+    await order.save({ session });
+
+    console.log("📍 Updating due amount for site...");
+    await Site.updateOne(
+      { _id: order.site },
+      { $set: { dueAmount: newTotalCost } },
+      { session }
+    );
+
+    await session.commitTransaction();
+    session.endSession();
+
+    console.log("✅ Order updated successfully:", order._id);
+    res.status(200).json({
+      success: true,
+      message: "✅ Order updated successfully",
+      order,
+    });
+  } catch (err) {
+    await session.abortTransaction();
+    session.endSession();
+    console.error("❌ Error editing order:", err);
+    res.status(500).json({ success: false, message: "Something went wrong." });
+  }
+};
+
 exports.returnOrderItems = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -1284,7 +1769,7 @@ exports.getOrdersBySite = async (req, res) => {
     }
 
     console.log(`✅ Site found! (${site._id})`);
-    console.log(`📦 Orders count: ${site.orders.length}`);
+    console.log(`📦 Orders count: ${site.orders}`);
 
     res.status(200).json({
       success: true,

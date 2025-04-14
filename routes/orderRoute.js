@@ -10,6 +10,7 @@ const {
   getOrdersByCustomer,
   deleteOrder,
   getOrderHistory,
+  editOrder,
 } = require("../controllers/orderController");
 const routes = express.Router();
 
@@ -23,5 +24,6 @@ routes.post("/getReturnedOrderItems", getReturnedOrderItems);
 routes.post("/getOrdersByCustomer", getOrdersByCustomer);
 routes.delete("/deleteOrder", deleteOrder);
 routes.post("/getOrdersHistory", getOrderHistory);
+routes.post("/editOrder", editOrder);
 
 module.exports = routes;
