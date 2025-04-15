@@ -34,9 +34,9 @@ const orderSchema = new mongoose.Schema(
           ref: "SubCategory",
           required: true,
         },
-        lostordamagedQty: { type: Number },
+        quantity: { type: Number },
         pricePerItem: { type: Number },
-        date: { type: Date, default: Date.now },
+        LDdate: { type: Date },
       },
     ],
     totalCostAmount: { type: Number, default: 0 }, // 🆕 Track total rental cost

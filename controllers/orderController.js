@@ -249,739 +249,6 @@ exports.addOrderItems = async (req, res) => {
   }
 };
 
-//  exports.editOrder = async (req, res) => {
-//    const session = await mongoose.startSession();
-//    session.startTransaction();
-
-//    try {
-//      const { orderId, updatedItems, updatedOrderDate } = req.body;
-//      console.log("🔄 Editing Order:", req.body);
-
-//      if (
-//        !orderId ||
-//        !Array.isArray(updatedItems) ||
-//        updatedItems.length === 0
-//      ) {
-//        console.log("Order ID and updated items are required.");
-//        return res.status(400).json({
-//          success: false,
-//          message: "Order ID and updated items are required.",
-//        });
-//      }
-
-//      const order = await Order.findById(orderId)
-//        .populate("items.subCategory")
-//        .session(session);
-//      if (!order) {
-//        await session.abortTransaction();
-//        session.endSession();
-//        return res
-//          .status(404)
-//          .json({ success: false, message: "Order not found." });
-//      }
-
-//      // Step 1: Restore previous stock
-//      for (let item of order.items) {
-//        const stock = await Stock.findOne({
-//          subCategory: item.subCategory._id,
-//        }).session(session);
-//        stock.availableStock += item.quantity;
-//        stock.OnRent -= item.quantity;
-//        await stock.save({ session });
-//      }
-
-//      // Step 2: Validate and update with new stock
-//      let newTotalCost = 0;
-//      const stockMap = new Map();
-
-//      for (let item of updatedItems) {
-//        let stock = stockMap.get(item.subCategory);
-//        if (!stock) {
-//          stock = await Stock.findOne({ subCategory: item.subCategory })
-//            .populate("subCategory", "rentalRate")
-//            .session(session);
-//          if (!stock) {
-//            await session.abortTransaction();
-//            session.endSession();
-//            return res.status(400).json({
-//              success: false,
-//              message: `Stock not found for subCategory: ${item.subCategory}`,
-//            });
-//          }
-//          stockMap.set(item.subCategory, stock);
-//        }
-
-//        if (stock.availableStock < item.quantity) {
-//          await session.abortTransaction();
-//          session.endSession();
-//          return res.status(400).json({
-//            success: false,
-//            message: `Insufficient stock for subCategory: ${item.subCategory}. Available: ${stock.availableStock}, Required: ${item.quantity}`,
-//          });
-//        }
-
-//        stock.availableStock -= item.quantity;
-//        stock.OnRent += item.quantity;
-//        await stock.save({ session });
-
-//        const itemCost = stock.subCategory.rentalRate * item.quantity;
-//        newTotalCost += itemCost;
-
-//        item.rentedAt = moment(
-//          updatedOrderDate.split(".")[0],
-//          "YYYY-MM-DD HH:mm:ss"
-//        ).toDate();
-//      }
-
-//      // Step 3: Update Order
-//      order.items = updatedItems;
-//      order.totalCostAmount = newTotalCost;
-//      order.orderDate = moment(
-//        updatedOrderDate.split(".")[0],
-//        "YYYY-MM-DD HH:mm:ss"
-//      ).toDate();
-//      await order.save({ session });
-
-//      // Step 4: Update OrderHistory
-//      await OrderHistory.deleteMany({
-//        order: orderId,
-//        actionType: "rent",
-//      }).session(session); // Optional: delete old history
-
-//      const history = new OrderHistory({
-//        actionType: "rent",
-//        order: order._id,
-//        items: updatedItems.map((item) => ({
-//          subCategory: item.subCategory,
-//          quantity: item.quantity,
-//          returned: 0,
-//          rentedAt: item.rentedAt,
-//        })),
-//        timestamp: new Date(),
-//      });
-//      await history.save({ session });
-
-//      order.orderHistory = [history._id];
-//      await order.save({ session });
-
-//      // Update Site dueAmount (optional, reset to match new order)
-//      const previousDue = order.totalCostAmount;
-//      await Site.updateOne(
-//        { _id: order.site },
-//        { $set: { dueAmount: newTotalCost } }, // Or $inc with difference
-//        { session }
-//      );
-
-//      await session.commitTransaction();
-//      session.endSession();
-
-//      res.status(200).json({
-//        success: true,
-//        message: "✅ Order updated successfully",
-//        order,
-//      });
-//    } catch (err) {
-//      await session.abortTransaction();
-//      session.endSession();
-//      console.error("❌ Error editing order:", err);
-//      res.status(500).json({
-//        success: false,
-//        message: "Something went wrong during order update.",
-//      });
-//    }
-//  };
-
-// exports.returnOrderItems = async (req, res) => {
-//   const session = await mongoose.startSession();
-//   session.startTransaction();
-
-//   try {
-//     console.log("🔄 Processing return request:", req.body);
-
-//     const { orderId, items } = req.body;
-
-//     if (!orderId || !Array.isArray(items) || items.length === 0) {
-//       await session.abortTransaction();
-//       session.endSession();
-//       return res.status(400).json({
-//         success: false,
-//         message: "Order ID and valid return items are required.",
-//       });
-//     }
-
-//     const order = await Order.findById(orderId).session(session);
-//     if (!order) {
-//       await session.abortTransaction();
-//       session.endSession();
-//       return res.status(404).json({
-//         success: false,
-//         message: "Order not found.",
-//       });
-//     }
-
-//     let totalReturnCost = 0;
-
-//     for (const returnItem of items) {
-//       const orderItem = order.items.find((item) =>
-//         item.subCategory.equals(returnItem.subCategory)
-//       );
-
-//       if (!orderItem) {
-//         await session.abortTransaction();
-//         session.endSession();
-//         return res.status(400).json({
-//           success: false,
-//           message: `SubCategory ${returnItem.subCategory} not found in order.`,
-//         });
-//       }
-
-//       const maxReturnable = orderItem.quantity - orderItem.returned;
-//       if (returnItem.quantityReturned > maxReturnable) {
-//         await session.abortTransaction();
-//         session.endSession();
-//         return res.status(400).json({
-//           success: false,
-//           message: `Cannot return more than ${maxReturnable} items for ${returnItem.subCategory}.`,
-//         });
-//       }
-
-//       // ✅ Fetch Stock Data
-//       const stock = await Stock.findOne({ subCategory: returnItem.subCategory })
-//         .populate("subCategory", "rentalRate")
-//         .session(session);
-
-//       if (!stock) {
-//         await session.abortTransaction();
-//         session.endSession();
-//         return res.status(400).json({
-//           success: false,
-//           message: `Stock not found for SubCategory ${returnItem.subCategory}.`,
-//         });
-//       }
-
-//       const rentalRate = stock.subCategory.rentalRate;
-//       const itemReturnCost = rentalRate * returnItem.quantityReturned;
-//       totalReturnCost += itemReturnCost;
-
-//       orderItem.returned += returnItem.quantityReturned;
-//       orderItem.returnedAt = new Date();
-
-//       await Stock.updateOne(
-//         { subCategory: returnItem.subCategory },
-//         {
-//           $inc: {
-//             OnRent: -returnItem.quantityReturned,
-//             availableStock: returnItem.quantityReturned,
-//           },
-//         },
-//         { session }
-//       );
-//     }
-
-//     const allReturned = order.items.every(
-//       (item) => item.quantity === item.returned
-//     );
-//     if (allReturned) {
-//       order.status = "returned";
-//     }
-
-//     order.totalCostAmount -= totalReturnCost; // 🔥 Adjust order cost
-//     await order.save({ session });
-
-//     await Site.updateOne(
-//       { _id: order.site },
-//       {
-//         $push: {
-//           history: {
-//             actionType: "return",
-//             order: order._id,
-//             customer: order.customer,
-//             details: {
-//               returnedItems: items.map((returnItem) => ({
-//                 subCategory: returnItem.subCategory,
-//                 quantityReturned: returnItem.quantityReturned,
-//               })),
-//             },
-//           },
-//         },
-//         $inc: { dueAmount: -totalReturnCost }, // 🔥 Adjust site's due amount
-//       },
-//       { session }
-//     );
-
-//     await session.commitTransaction();
-//     session.endSession();
-
-//     console.log("✅ Items successfully returned:", orderId);
-//     res.status(200).json({
-//       success: true,
-//       message: "Items returned successfully!",
-//       order,
-//     });
-//   } catch (error) {
-//     await session.abortTransaction();
-//     session.endSession();
-//     console.error("❌ Error returning items:", error);
-//     res.status(500).json({
-//       success: false,
-//       message: "Internal server error.",
-//     });
-//   }
-// };
-
-// exports.returnOrderItems = async (req, res) => {
-//   const session = await mongoose.startSession();
-//   session.startTransaction();
-
-//   try {
-//     console.log("🔄 Processing return request:", req.body);
-
-//     const { orderId, items } = req.body; // [{ subCategory: "abc", quantityReturned: 2 }]
-
-//     // 🛑 Validate request data
-//     if (!orderId || !Array.isArray(items) || items.length === 0) {
-//       await session.abortTransaction();
-//       session.endSession();
-//       return res.status(400).json({
-//         success: false,
-//         message: "Order ID and valid return items are required.",
-//       });
-//     }
-
-//     // 📝 Fetch order inside transaction
-//     const order = await Order.findById(orderId).session(session);
-//     if (!order) {
-//       await session.abortTransaction();
-//       session.endSession();
-//       return res
-//         .status(404)
-//         .json({ success: false, message: "Order not found." });
-//     }
-
-//     // ✅ Process each returned item
-//     for (const returnItem of items) {
-//       const orderItem = order.items.find((item) =>
-//         item.subCategory.equals(returnItem.subCategory)
-//       );
-
-//       if (!orderItem) {
-//         await session.abortTransaction();
-//         session.endSession();
-//         return res.status(400).json({
-//           success: false,
-//           message: `SubCategory ${returnItem.subCategory} not found in order.`,
-//         });
-//       }
-
-//       // 🛑 Validate return quantity
-//       const maxReturnable = orderItem.quantity - orderItem.returned;
-//       if (returnItem.quantityReturned > maxReturnable) {
-//         await session.abortTransaction();
-//         session.endSession();
-//         return res.status(400).json({
-//           success: false,
-//           message: `Cannot return more than ${maxReturnable} items for ${returnItem.subCategory}.`,
-//         });
-//       }
-
-//       // ✅ Update order's returned count
-//       orderItem.returned += returnItem.quantityReturned;
-//       orderItem.returnedAt = new Date(); // Store return time
-
-//       // ✅ Atomic Stock Update (Prevents Race Conditions)
-//       const stockUpdate = await Stock.updateOne(
-//         { subCategory: returnItem.subCategory },
-//         {
-//           $inc: {
-//             OnRent: -returnItem.quantityReturned, // Reduce rented stock
-//             availableStock: returnItem.quantityReturned, // Add back to available stock
-//           },
-//         },
-//         { session }
-//       );
-
-//       if (stockUpdate.matchedCount === 0) {
-//         await session.abortTransaction();
-//         session.endSession();
-//         return res.status(400).json({
-//           success: false,
-//           message: `Stock not found for SubCategory ${returnItem.subCategory}.`,
-//         });
-//       }
-//     }
-
-//     // ✅ Check if all items are returned
-//     const allReturned = order.items.every(
-//       (item) => item.quantity === item.returned
-//     );
-//     if (allReturned) {
-//       order.status = "returned";
-//     }
-
-//     await order.save({ session });
-
-//     // ✅ Update Site History within Transaction
-//     await Site.updateOne(
-//       { _id: order.site },
-//       {
-//         $push: {
-//           history: {
-//             actionType: "return",
-//             order: order._id,
-//             customer: order.customer,
-//             details: {
-//               returnedItems: items.map((returnItem) => ({
-//                 subCategory: returnItem.subCategory,
-//                 quantityReturned: returnItem.quantityReturned,
-//               })),
-//             },
-//           },
-//         },
-//       },
-//       { session }
-//     );
-
-//     // ✅ Commit transaction
-//     await session.commitTransaction();
-//     session.endSession();
-
-//     console.log("✅ Items successfully returned:", orderId);
-//     res.status(200).json({
-//       success: true,
-//       message: "Items returned successfully!",
-//       order,
-//     });
-//   } catch (error) {
-//     await session.abortTransaction();
-//     session.endSession();
-//     console.error("❌ Error returning items:", error);
-//     res.status(500).json({ success: false, message: "Internal server error." });
-//   }
-// };
-
-// exports.returnOrderItems = async (req, res) => {
-//   const session = await mongoose.startSession();
-//   session.startTransaction();
-
-//   try {
-//     console.log("🔄 Processing return request:", req.body);
-
-//     const { siteId, items } = req.body;
-
-//     if (!siteId || !Array.isArray(items) || items.length === 0) {
-//       await session.abortTransaction();
-//       session.endSession();
-//       console.log("❌ Invalid return request:", req.body);
-//       return res.status(400).json({
-//         success: false,
-//         message: "Site ID and valid return items are required.",
-//       });
-//     }
-
-//     // Find active order(s) for the given site
-//     const orders = await Order.find({ site: siteId, status: "onrent" }).session(
-//       session
-//     );
-
-//     if (!orders.length) {
-//       await session.abortTransaction();
-//       session.endSession();
-//       console.log("⚠️ No active orders found for this site.");
-//       return res.status(404).json({
-//         success: false,
-//         message: "No active orders found for this site.",
-//       });
-//     }
-
-//     // Assuming only one active order per site, otherwise handle multiple orders
-//     const order = orders[0];
-
-//     let totalReturnCost = 0;
-
-//     for (const returnItem of items) {
-//       const orderItem = order.items.find((item) =>
-//         item.subCategory.equals(returnItem.subCategory)
-//       );
-
-//       if (!orderItem) {
-//         await session.abortTransaction();
-//         session.endSession();
-//         return res.status(400).json({
-//           success: false,
-//           message: `SubCategory ${returnItem.subCategory} not found in order.`,
-//         });
-//       }
-
-//       const maxReturnable = orderItem.quantity - orderItem.returned;
-//       if (returnItem.quantityReturned > maxReturnable) {
-//         await session.abortTransaction();
-//         session.endSession();
-//         console.log(
-//           `❌ Cannot return more than ${maxReturnable} items for ${returnItem.subCategory}.`
-//         );
-//         return res.status(400).json({
-//           success: false,
-//           message: `Cannot return more than ${maxReturnable} items for ${returnItem.subCategory}.`,
-//         });
-//       }
-
-//       // ✅ Fetch Stock Data
-//       const stock = await Stock.findOne({ subCategory: returnItem.subCategory })
-//         .populate("subCategory", "rentalRate")
-//         .session(session);
-
-//       if (!stock) {
-//         await session.abortTransaction();
-//         session.endSession();
-//         return res.status(400).json({
-//           success: false,
-//           message: `Stock not found for SubCategory ${returnItem.subCategory}.`,
-//         });
-//       }
-
-//       const rentalRate = stock.subCategory.rentalRate;
-//       const itemReturnCost = rentalRate * returnItem.quantityReturned;
-//       totalReturnCost += itemReturnCost;
-
-//       orderItem.returned += returnItem.quantityReturned;
-//       orderItem.returnedAt = new Date();
-
-//       await Stock.updateOne(
-//         { subCategory: returnItem.subCategory },
-//         {
-//           $inc: {
-//             OnRent: -returnItem.quantityReturned,
-//             availableStock: returnItem.quantityReturned,
-//           },
-//         },
-//         { session }
-//       );
-//     }
-
-//     const allReturned = order.items.every(
-//       (item) => item.quantity === item.returned
-//     );
-//     if (allReturned) {
-//       order.status = "returned";
-//     }
-
-//     order.totalCostAmount -= totalReturnCost; // 🔥 Adjust order cost
-//     await order.save({ session });
-
-//     await Site.updateOne(
-//       { _id: siteId },
-//       {
-//         $push: {
-//           history: {
-//             actionType: "return",
-//             order: order._id,
-//             customer: order.customer,
-//             details: {
-//               returnedItems: items.map((returnItem) => ({
-//                 subCategory: returnItem.subCategory,
-//                 quantityReturned: returnItem.quantityReturned,
-//               })),
-//             },
-//           },
-//         },
-//         $inc: { dueAmount: -totalReturnCost }, // 🔥 Adjust site's due amount
-//       },
-//       { session }
-//     );
-
-//     await session.commitTransaction();
-//     session.endSession();
-
-//     console.log("✅ Items successfully returned for site:", siteId);
-//     res.status(200).json({
-//       success: true,
-//       message: "Items returned successfully!",
-//       order,
-//     });
-//   } catch (error) {
-//     await session.abortTransaction();
-//     session.endSession();
-//     console.error("❌ Error returning items:", error);
-//     res.status(500).json({
-//       success: false,
-//       message: "Internal server error.",
-//     });
-//   }
-// };
-
-// exports.returnOrderItems = async (req, res) => {
-//   const session = await mongoose.startSession();
-//   session.startTransaction();
-
-//   try {
-//     console.log("🔄 Processing return request:", req.body);
-
-//     const { orderId, items } = req.body;
-
-//     if (!orderId || !Array.isArray(items) || items.length === 0) {
-//       await session.abortTransaction();
-//       session.endSession();
-//       console.log("❌ Invalid return request:", req.body);
-//       return res.status(400).json({
-//         success: false,
-//         message: "Order ID and valid return items are required.",
-//       });
-//     }
-
-//     const order = await Order.findOne({
-//       _id: orderId,
-//       status: "onrent",
-//     }).session(session);
-
-//     if (!order) {
-//       await session.abortTransaction();
-//       session.endSession();
-//       console.log("⚠️ No active order found for this ID.");
-//       return res.status(404).json({
-//         success: false,
-//         message: "No active order found for this ID.",
-//       });
-//     }
-
-//     let totalReturnCost = 0;
-//      const historyItems = [];
-
-//     for (const returnItem of items) {
-//       const orderItem = order.items.find((item) =>
-//         item.subCategory.equals(returnItem.subCategory)
-//       );
-
-//       if (!orderItem) {
-//         await session.abortTransaction();
-//         session.endSession();
-//         return res.status(400).json({
-//           success: false,
-//           message: `SubCategory ${returnItem.subCategory} not found in order.`,
-//         });
-//       }
-
-//       const maxReturnable = orderItem.quantity - orderItem.returned;
-//       if (returnItem.quantityReturned > maxReturnable) {
-//         await session.abortTransaction();
-//         session.endSession();
-//         return res.status(400).json({
-//           success: false,
-//           message: `Cannot return more than ${maxReturnable} items for ${returnItem.subCategory}.`,
-//         });
-//       }
-
-//       const stock = await Stock.findOne({ subCategory: returnItem.subCategory })
-//         .populate("subCategory", "rentalRate")
-//         .session(session);
-
-//       if (!stock) {
-//         await session.abortTransaction();
-//         session.endSession();
-//         return res.status(400).json({
-//           success: false,
-//           message: `Stock not found for SubCategory ${returnItem.subCategory}.`,
-//         });
-//       }
-
-//       const rentalRate = stock.subCategory.rentalRate;
-//       const itemReturnCost = rentalRate * returnItem.quantityReturned;
-//       totalReturnCost += itemReturnCost;
-
-//       orderItem.returned += returnItem.quantityReturned;
-//       orderItem.returnedAt = new Date();
-
-//       await Stock.updateOne(
-//         { subCategory: returnItem.subCategory },
-//         {
-//           $inc: {
-//             OnRent: -returnItem.quantityReturned,
-//             availableStock: returnItem.quantityReturned,
-//           },
-//         },
-//         { session }
-//       );
-//     }
-
-//      // 📝 Add to return history items
-//       historyItems.push({
-//         subCategory: returnItem.subCategory,
-//         quantity: orderItem.quantity,
-//         returned: orderItem.returned,
-//         rentedAt: orderItem.rentedAt,
-//         returnedAt: orderItem.returnedAt,
-//       });
-//     }
-
-//     const allReturned = order.items.every(
-//       (item) => item.quantity === item.returned
-//     );
-//     if (allReturned) {
-//       order.status = "returned";
-//     }
-
-//     // // 🆕 Push return history into order
-//     // order.orderHistory.push({
-//     //   actionType: "return",
-//     //   order: order._id,
-//     //   details: {
-//     //     returnedItems: items.map((i) => ({
-//     //       subCategory: i.subCategory,
-//     //       quantityReturned: i.quantityReturned,
-//     //     })),
-//     //   },
-//     //   timestamp: new Date(),
-//     // });
-
-//     order.totalCostAmount -= totalReturnCost;
-//   await order.save({ session });
-
-//   // 🧾 Record in OrderHistory
-//     await OrderHistory.create(
-//       [
-//         {
-//           actionType: "return",
-//           order: order._id,
-//           items: historyItems,
-//           timestamp: new Date(),
-//         },
-//       ],
-//       { session }
-//     );
-
-//     // 🆕 Update site's dueAmount only
-//     await Site.updateOne(
-//       { _id: order.site },
-//       {
-//         $inc: { dueAmount: -totalReturnCost },
-//       },
-//       { session }
-//     );
-
-//     await session.commitTransaction();
-//     session.endSession();
-
-//     console.log("✅ Items successfully returned for order:", orderId);
-//     res.status(200).json({
-//       success: true,
-//       message: "Items returned successfully!",
-//       order,
-//     });
-//   } catch (error) {
-//     await session.abortTransaction();
-//     session.endSession();
-//     console.error("❌ Error returning items:", error);
-//     res.status(500).json({
-//       success: false,
-//       message: "Internal server error.",
-//     });
-//   }
-// };
-
-// Updated editOrder function with full support for:
-// - Adding new items
-// - Removing old items
-// - Updating quantity of existing items
-// - Updating stocks and order history
 
 exports.editOrder = async (req, res) => {
   console.log("🔄 Editing Order:", req.body);
@@ -1141,15 +408,6 @@ exports.editOrder = async (req, res) => {
 
       console.log("📦 Stock updated:", stock);
 
-      // const rentalRate = stock.subCategory.rentalRate;
-      // console.log("📦 Rental rate:", rentalRate);
-      // const cost = rentalRate * item.quantity;
-      // console.log("💰 Cost for this item:", cost);
-      // const previousCost = rentalRate * item.previousQuantity;
-      // console.log("💰 Previous cost for this item:", previousCost);
-      // newTotalCost += cost; // ✅ Corrected
-      // console.log("💰 Updated total cost:", newTotalCost);
-
       item.rentedAt = moment(
         updatedOrderDate.split(".")[0],
         "YYYY-MM-DD HH:mm:ss"
@@ -1205,11 +463,6 @@ exports.editOrder = async (req, res) => {
       const subCat = await mongoose
         .model("SubCategory")
         .findById(item.subCategory);
-
-      // const itemRate = subCat?.rentalRate || 0;
-      // newTotalCost -= itemRate * item.quantity;
-
-      // console.log(`💰 Updated total cost after removal: ${newTotalCost}`);
     }
 
     console.log("🧾 Updating order...");
@@ -1651,17 +904,16 @@ exports.addLostOrDamagedItem = async (req, res) => {
   try {
     console.log("📝 [ADD LOST/DAMAGED ITEM] API hit");
 
-    const { orderId, subCategoryId, lostOrDamagedQty, pricePerItem } = req.body;
+    const { orderId, LDdate, items } = req.body;
+    console.log("Order lost/damaged:", req.body);
 
-    // Validate required fields
-    if (!orderId || !subCategoryId || !lostOrDamagedQty || !pricePerItem) {
+    if (!orderId || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
         success: false,
-        message: "Missing required fields",
+        message: "Missing required fields or items array is empty",
       });
     }
 
-    // Find the order
     const order = await Order.findById(orderId);
     if (!order) {
       return res.status(404).json({
@@ -1670,47 +922,76 @@ exports.addLostOrDamagedItem = async (req, res) => {
       });
     }
 
-    // Find the subcategory inside the order's items
-    const rentedItem = order.items.find(
-      (item) => item.subCategory.toString() === subCategoryId
-    );
-    if (!rentedItem) {
-      return res.status(400).json({
-        success: false,
-        message: "Subcategory not found in order",
+    let totalLostCost = 0;
+    const updates = [];
+
+    for (const item of items) {
+      const { subCategoryId, lostOrDamagedQty, pricePerItem } = item;
+
+      if (!subCategoryId || !lostOrDamagedQty || !pricePerItem) {
+        continue; // skip incomplete entries
+      }
+
+      const rentedItem = order.items.find(
+        (itm) => itm.subCategory.toString() === subCategoryId
+      );
+      if (!rentedItem) continue;
+      console.log("[rented Item]", rentedItem);
+
+      const alreadyLostQty = order.lostOrDamagedItems
+        .filter((itm) => itm.subCategory.toString() === subCategoryId)
+        .reduce((sum, itm) => sum + itm.quantity, 0);
+
+      const remainingQty = rentedItem.quantity - alreadyLostQty;
+      console.log(
+        "[remainingQty]",
+        remainingQty,
+        " = ",
+        rentedItem.quantity,
+        " - ",
+        alreadyLostQty
+      );
+      console.log("[lostOrDamagedQty]", lostOrDamagedQty);
+      if (lostOrDamagedQty > remainingQty) continue;
+
+      const itemCost = lostOrDamagedQty * pricePerItem;
+      totalLostCost += itemCost;
+
+      order.lostOrDamagedItems.push({
+        subCategory: subCategoryId,
+        quantity: lostOrDamagedQty,
+        pricePerItem,
+        date: new Date(LDdate),
       });
+      rentedItem.quantity -= lostOrDamagedQty;
+      updates.push({
+        subCategory: subCategoryId,
+        quantity: lostOrDamagedQty,
+        pricePerItem,
+        totalLostCost: itemCost,
+      });
+
+      // ✅ Restore from stock
+      const productStock = await Stock.findOne({
+        subCategory: subCategoryId, // or `productId` depending on your schem
+      });
+      console.log(productStock, "product stock");
+
+      if (productStock) {
+        productStock.OnRent = Math.max(
+          0,
+          productStock.OnRent - lostOrDamagedQty
+        );
+
+        console.log(productStock, "product stock total stock");
+        await productStock.save();
+      }
     }
 
-    // Check if lost/damaged quantity does not exceed rented quantity
-    const alreadyLostOrDamagedQty = order.lostOrDamagedItems
-      .filter((item) => item.subCategory.toString() === subCategoryId)
-      .reduce((sum, item) => sum + item.quantity, 0);
-
-    const remainingQty = rentedItem.quantity - alreadyLostOrDamagedQty;
-
-    if (lostOrDamagedQty > remainingQty) {
-      return res.status(400).json({
-        success: false,
-        message: `Lost/damaged quantity exceeds available rented quantity. Remaining: ${remainingQty}`,
-      });
-    }
-
-    // Calculate total lost/damaged cost
-    const totalLostCost = lostOrDamagedQty * pricePerItem;
-
-    // Add the lost/damaged item to the order
-    order.lostOrDamagedItems.push({
-      subCategory: subCategoryId,
-      quantity: lostOrDamagedQty,
-      pricePerItem,
-      date: new Date(),
-    });
-
-    // Update totalCostAmount in the order
     order.totalCostAmount += totalLostCost;
     await order.save();
+    console.log(" Order updated with lost/damaged items", order);
 
-    // Update dueAmount in the Site schema
     const site = await Site.findById(order.site);
     if (site) {
       site.dueAmount += totalLostCost;
@@ -1719,16 +1000,12 @@ exports.addLostOrDamagedItem = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: "✅ Lost/Damaged item recorded successfully!",
-      lostOrDamagedItem: {
-        subCategory: subCategoryId,
-        quantity: lostOrDamagedQty,
-        pricePerItem,
-        totalLostCost,
-      },
+      message: "✅ Lost/Damaged items added successfully!",
+      totalLostCost,
+      addedItems: updates,
     });
   } catch (error) {
-    console.error("❌ [Error] Adding lost/damaged item:", error);
+    console.error("❌ [Error] Adding lost/damaged items:", error);
     res.status(500).json({
       success: false,
       message: "Internal Server Error",
@@ -1758,6 +1035,14 @@ exports.getOrdersBySite = async (req, res) => {
           {
             path: "site",
             select: "sitename",
+          },
+          {
+            path: "lostOrDamagedItems.subCategory",
+            select: "name",
+          },
+          {
+            path: "lostOrDamagedItems",
+            select: "quantity",
           },
         ],
       })
@@ -1803,6 +1088,10 @@ exports.getReturnedOrderItems = async (req, res) => {
         {
           path: "site",
           select: "sitename",
+        },
+        {
+          path: "lostOrDamagedItems.subCategory",
+          select: "name",
         },
       ],
     });

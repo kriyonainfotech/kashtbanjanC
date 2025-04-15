@@ -10,10 +10,10 @@ const paymentSchema = new mongoose.Schema(
       required: true,
     }, // Linked Customer
     amount: { type: Number, required: true }, // Payment amount
-    date: { type: Date, default: Date.now }, // Payment date
+    date: { type: Date }, // Payment date
     paymentMethod: {
       type: String,
-      enum: ["Cash", "UPI", "Bank Transfer", "Credit Card"],
+      enum: ["Cash", "UPI", "Bank Transfer", "Credit Card", "Other"],
       required: true,
     }, // Payment method
     paymentType: {

@@ -202,15 +202,23 @@ exports.addPayment = async (req, res) => {
     });
 
     await payment.save({ session });
-    console.log("💰 Payment Saved:", payment._id);
+    console.log("💰 Payment Saved:", payment);
 
-    // 💸 Reduce dueAmount in Site
-    await Site.updateOne(
-      { _id: site },
-      { $inc: { dueAmount: -amount } },
-      { session }
-    );
-    console.log(`🏦 Site (${site}) dueAmount reduced by ₹${amount}`);
+    // 💸 Update dueAmount based on paymentType
+    if (
+      paymentType === "HalfPayment" ||
+      paymentType === "FullPayment" ||
+      paymentType === "Discount"
+    ) {
+      await Site.updateOne(
+        { _id: site },
+        { $inc: { dueAmount: -amount } },
+        { session }
+      );
+      console.log(
+        `🏦 Site (${site}) dueAmount updated by ₹${amount} - ${paymentType}`
+      );
+    }
 
     // 🔗 If order is linked, push payment ID and check payment completion
     if (order) {
@@ -265,7 +273,6 @@ exports.addPayment = async (req, res) => {
     });
   }
 };
-
 
 exports.editPayment = async (req, res) => {
   const session = await mongoose.startSession();
@@ -473,4 +480,43 @@ exports.deletePayment = async (req, res) => {
   }
 };
 
+exports.getPaymentByOrder = async (req, res) => {
+  const { orderId } = req.body;
 
+  if (!orderId) {
+    console.log("❌ [Missing Order ID]");
+    return res.status(400).json({
+      success: false,
+      message: "Order ID is required!",
+    });
+  }
+
+  try {
+    const payment = await Payment.find()
+      .sort({ createdAt: -1 })
+      .populate("site", "sitename");
+    console.log(payment);
+
+    if (!payment) {
+      console.log("⚠️ [Payment Not Found] For Order:", orderId);
+      return res.status(404).json({
+        success: false,
+        message: "Payment does not exist!",
+      });
+    }
+
+    console.log("✅ [Payment Found] For Order:", orderId, payment);
+    res.status(200).json({
+      success: true,
+      message: "Payment found!",
+      payment,
+    });
+  } catch (error) {
+    console.error("❌ [Error] Getting Payment By Order:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      error: error.message,
+    });
+  }
+};
