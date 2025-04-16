@@ -186,6 +186,16 @@ exports.addOrderItems = async (req, res) => {
       await stock.save({ session }); // 🔄 Save within transaction
     }
 
+    // Step 2.5: Generate Invoice Number
+    const appPrefix = "kc"; // Or dynamically set it if needed
+    const updatedSite = await Site.findByIdAndUpdate(
+      site,
+      { $inc: { invoiceCounter: 1 } },
+      { new: true, session }
+    );
+
+    const invoiceNo = `${appPrefix}-${updatedSite.invoiceCounter}`;
+
     // Step 3: Create order with total rental cost
     const order = new Order({
       customer,
@@ -194,6 +204,7 @@ exports.addOrderItems = async (req, res) => {
       totalCostAmount,
       rentedDate: new Date(),
       orderDate: parsedorderDate, // 🆕 Use provided date or current date
+      invoiceNo,
     });
 
     await order.save({ session });
@@ -231,7 +242,7 @@ exports.addOrderItems = async (req, res) => {
     await session.commitTransaction();
     session.endSession();
 
-    console.log("🎉 Order successfully created:", order._id);
+    console.log("🎉 Order successfully created:", order);
     res.status(201).json({
       success: true,
       message: "✅ Order added successfully!",
@@ -248,7 +259,6 @@ exports.addOrderItems = async (req, res) => {
     });
   }
 };
-
 
 exports.editOrder = async (req, res) => {
   console.log("🔄 Editing Order:", req.body);

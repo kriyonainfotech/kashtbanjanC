@@ -35,6 +35,10 @@ const siteSchema = new mongoose.Schema(
     ],
 
     dueAmount: { type: Number, default: 0 }, // 🔥 Track due amount
+    invoiceCounter: {
+      type: Number,
+      default: 0,
+    },
   },
   { timestamps: true }
 );

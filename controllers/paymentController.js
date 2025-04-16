@@ -483,8 +483,13 @@ exports.deletePayment = async (req, res) => {
 exports.getPaymentByOrder = async (req, res) => {
   const { orderId } = req.body;
 
+  console.log(
+    "📥 [Request Received] getPaymentByOrder with orderId:",
+    req.body
+  );
+
   if (!orderId) {
-    console.log("❌ [Missing Order ID]");
+    console.log("❌ [Validation Error] Missing Order ID");
     return res.status(400).json({
       success: false,
       message: "Order ID is required!",
@@ -492,27 +497,30 @@ exports.getPaymentByOrder = async (req, res) => {
   }
 
   try {
-    const payment = await Payment.find()
+    console.log("🔍 [Querying] Fetching payment related to order...");
+
+    const payment = await Payment.find({ order: orderId })
       .sort({ createdAt: -1 })
       .populate("site", "sitename");
-    console.log(payment);
 
-    if (!payment) {
-      console.log("⚠️ [Payment Not Found] For Order:", orderId);
+    if (!payment || payment.length === 0) {
+      console.log("⚠️ [No Payment Found] For Order ID:", orderId);
       return res.status(404).json({
         success: false,
         message: "Payment does not exist!",
       });
     }
 
-    console.log("✅ [Payment Found] For Order:", orderId, payment);
+    console.log("✅ [Success] Payment(s) found for Order:", orderId);
+    console.log("📦 [Payment Data]:", payment, payment.length);
+
     res.status(200).json({
       success: true,
       message: "Payment found!",
       payment,
     });
   } catch (error) {
-    console.error("❌ [Error] Getting Payment By Order:", error);
+    console.error("💥 [Server Error] While getting payment by order:", error);
     res.status(500).json({
       success: false,
       message: "Internal Server Error",
