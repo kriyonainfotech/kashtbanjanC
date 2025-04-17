@@ -187,14 +187,19 @@ exports.addOrderItems = async (req, res) => {
     }
 
     // Step 2.5: Generate Invoice Number
-    const appPrefix = "kc"; // Or dynamically set it if needed
-    const updatedSite = await Site.findByIdAndUpdate(
-      site,
-      { $inc: { invoiceCounter: 1 } },
-      { new: true, session }
-    );
+const appPrefix = "kc";
+const currentDate = new Date();
+const formattedDate = moment(currentDate).format("DDMMYY");
 
-    const invoiceNo = `${appPrefix}-${updatedSite.invoiceCounter}`;
+// Update the site's invoice counter
+const updatedSite = await Site.findByIdAndUpdate(
+  site,
+  { $inc: { invoiceCounter: 1 } },
+  { new: true, session }
+);
+
+const invoiceNo = `${appPrefix}-${formattedDate}-${updatedSite.invoiceCounter}`;
+
 
     // Step 3: Create order with total rental cost
     const order = new Order({
