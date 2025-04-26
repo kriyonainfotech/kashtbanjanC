@@ -187,19 +187,16 @@ exports.addOrderItems = async (req, res) => {
     }
 
     // Step 2.5: Generate Invoice Number
-    const currentDate = new Date();
-    const formattedDate = moment(currentDate).format("DDMMYY"); // e.g., 170425
-    const siteSuffix = site.toString().slice(-4); // e.g., 5d9f
+    // 🚀 Step 2.5: Generate Simple Invoice Number (kc-1, kc-2, kc-3 per site)
 
-    // Increment the invoice counter
     const updatedSite = await Site.findByIdAndUpdate(
       site,
       { $inc: { invoiceCounter: 1 } },
       { new: true, session }
     );
 
-    // Final invoice number: kc1704255d9f3
-    const invoiceNo = `kc${formattedDate}-${siteSuffix}${updatedSite.invoiceCounter}`;
+    // 📄 Final Invoice Number
+    const invoiceNo = `kc-${updatedSite.invoiceCounter}`;
 
     // Step 3: Create order with total rental cost
     const order = new Order({

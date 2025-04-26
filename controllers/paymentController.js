@@ -274,112 +274,112 @@ exports.addPayment = async (req, res) => {
   }
 };
 
-exports.editPayment = async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction(); // 🔄 Start transaction
+// exports.editPayment = async (req, res) => {
+//   const session = await mongoose.startSession();
+//   session.startTransaction(); // 🔄 Start transaction
 
-  try {
-    console.log("✏️ [EDIT PAYMENT] API hit");
+//   try {
+//     console.log("✏️ [EDIT PAYMENT] API hit");
 
-    const { paymentId, amount, paymentMethod, paymentType, remarks } = req.body;
+//     const { paymentId, amount, paymentMethod, paymentType, remarks } = req.body;
 
-    // ✅ Validate required fields
-    if (!paymentId || !amount || !paymentMethod) {
-      console.warn("⚠️ [Validation Failed] Missing required fields");
-      return res.status(400).json({
-        success: false,
-        message: "Payment ID, amount, and payment method are required!",
-      });
-    }
+//     // ✅ Validate required fields
+//     if (!paymentId || !amount || !paymentMethod) {
+//       console.warn("⚠️ [Validation Failed] Missing required fields");
+//       return res.status(400).json({
+//         success: false,
+//         message: "Payment ID, amount, and payment method are required!",
+//       });
+//     }
 
-    // ✅ Check if payment exists
-    const existingPayment = await Payment.findById(paymentId).session(session);
-    if (!existingPayment) {
-      console.log("⚠️ [Payment Not Found]:", paymentId);
-      await session.abortTransaction();
-      session.endSession();
-      return res.status(404).json({
-        success: false,
-        message: "Payment does not exist!",
-      });
-    }
+//     // ✅ Check if payment exists
+//     const existingPayment = await Payment.findById(paymentId).session(session);
+//     if (!existingPayment) {
+//       console.log("⚠️ [Payment Not Found]:", paymentId);
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res.status(404).json({
+//         success: false,
+//         message: "Payment does not exist!",
+//       });
+//     }
 
-    console.log("🔧 [Updating Payment] ID:", paymentId);
+//     console.log("🔧 [Updating Payment] ID:", paymentId);
 
-    // 🔥 Fetch the related site
-    const existingSite = await Site.findById(existingPayment.site).session(
-      session
-    );
-    if (!existingSite) {
-      console.log(
-        "❌ [Site Not Found] Linked to Payment:",
-        existingPayment.site
-      );
-      await session.abortTransaction();
-      session.endSession();
-      return res
-        .status(404)
-        .json({ success: false, message: "Site not found." });
-    }
+//     // 🔥 Fetch the related site
+//     const existingSite = await Site.findById(existingPayment.site).session(
+//       session
+//     );
+//     if (!existingSite) {
+//       console.log(
+//         "❌ [Site Not Found] Linked to Payment:",
+//         existingPayment.site
+//       );
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res
+//         .status(404)
+//         .json({ success: false, message: "Site not found." });
+//     }
 
-    // 🔄 Recalculate dueAmount based on the new payment amount
-    const oldAmount = existingPayment.amount;
-    const amountDifference = amount - oldAmount;
-    const updatedDueAmount = Math.max(
-      0,
-      existingSite.dueAmount - amountDifference
-    );
+//     // 🔄 Recalculate dueAmount based on the new payment amount
+//     const oldAmount = existingPayment.amount;
+//     const amountDifference = amount - oldAmount;
+//     const updatedDueAmount = Math.max(
+//       0,
+//       existingSite.dueAmount - amountDifference
+//     );
 
-    // ✅ Update payment details
-    const updatedPayment = await Payment.findByIdAndUpdate(
-      paymentId,
-      { amount, paymentMethod, paymentType, remarks },
-      { new: true, runValidators: true, session }
-    );
+//     // ✅ Update payment details
+//     const updatedPayment = await Payment.findByIdAndUpdate(
+//       paymentId,
+//       { amount, paymentMethod, paymentType, remarks },
+//       { new: true, runValidators: true, session }
+//     );
 
-    console.log(`✅ [Payment Updated] ID: ${updatedPayment._id}`);
+//     console.log(`✅ [Payment Updated] ID: ${updatedPayment._id}`);
 
-    // ✅ Add history entry for the update
-    const historyEntry = {
-      actionType: "payment",
-      order: existingPayment.order || null,
-      details: { amount, paymentMethod, paymentType, remarks, edited: true },
-      timestamp: new Date(),
-    };
+//     // ✅ Add history entry for the update
+//     const historyEntry = {
+//       actionType: "payment",
+//       order: existingPayment.order || null,
+//       details: { amount, paymentMethod, paymentType, remarks, edited: true },
+//       timestamp: new Date(),
+//     };
 
-    // ✅ Update the site's dueAmount & add history
-    await Site.updateOne(
-      { _id: existingPayment.site },
-      {
-        $set: { dueAmount: updatedDueAmount },
-        $push: { history: historyEntry }, // 🔥 Adding history entry
-      },
-      { session }
-    );
+//     // ✅ Update the site's dueAmount & add history
+//     await Site.updateOne(
+//       { _id: existingPayment.site },
+//       {
+//         $set: { dueAmount: updatedDueAmount },
+//         $push: { history: historyEntry }, // 🔥 Adding history entry
+//       },
+//       { session }
+//     );
 
-    console.log("🔗 [Site Updated] dueAmount & History Updated");
+//     console.log("🔗 [Site Updated] dueAmount & History Updated");
 
-    await session.commitTransaction(); // ✅ Commit transaction
-    session.endSession();
+//     await session.commitTransaction(); // ✅ Commit transaction
+//     session.endSession();
 
-    res.status(200).json({
-      success: true,
-      message: "🎉 Payment updated successfully",
-      payment: updatedPayment,
-      updatedDueAmount,
-    });
-  } catch (error) {
-    await session.abortTransaction(); // 🚨 Rollback on error
-    session.endSession();
+//     res.status(200).json({
+//       success: true,
+//       message: "🎉 Payment updated successfully",
+//       payment: updatedPayment,
+//       updatedDueAmount,
+//     });
+//   } catch (error) {
+//     await session.abortTransaction(); // 🚨 Rollback on error
+//     session.endSession();
 
-    console.error("❌ [Error] Updating Payment:", error);
-    res.status(500).json({
-      success: false,
-      message: "Internal Server Error",
-      error: error.message,
-    });
-  }
-};
+//     console.error("❌ [Error] Updating Payment:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Internal Server Error",
+//       error: error.message,
+//     });
+//   }
+// };
 
 exports.deletePayment = async (req, res) => {
   const session = await mongoose.startSession();
@@ -528,3 +528,128 @@ exports.getPaymentByOrder = async (req, res) => {
     });
   }
 };
+
+exports.editPayment = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const {
+      paymentId, // paymentId is must for editing
+      site,
+      order,
+      customer,
+      amount,
+      paymentMethod,
+      paymentType,
+      remarks,
+      date,
+    } = req.body;
+
+    console.log("✏️ Edit Payment Request Received", req.body);
+
+    if (!paymentId) {
+      await session.abortTransaction();
+      session.endSession();
+      console.log("❗ Missing paymentId.");
+      return res.status(400).json({
+        success: false,
+        message: "Payment ID is required.",
+      });
+    }
+
+    const existingPayment = await Payment.findById(paymentId).session(session);
+    if (!existingPayment) {
+      await session.abortTransaction();
+      session.endSession();
+      console.log("❗ Payment not found.");
+      return res.status(404).json({
+        success: false,
+        message: "Payment not found.",
+      });
+    }
+
+    // 🧮 Reverse old dueAmount if old paymentType affects it
+    if (
+      existingPayment.paymentType === "HalfPayment" ||
+      existingPayment.paymentType === "FullPayment" ||
+      existingPayment.paymentType === "Discount"
+    ) {
+      await Site.updateOne(
+        { _id: existingPayment.site },
+        { $inc: { dueAmount: existingPayment.amount } },
+        { session }
+      );
+      console.log(`↩️ Reversed old dueAmount ₹${existingPayment.amount}`);
+    }
+
+    // 📝 Update only provided fields
+    if (site) existingPayment.site = site;
+    if (order) existingPayment.order = order;
+    if (customer) existingPayment.customer = customer;
+    if (amount !== undefined) existingPayment.amount = amount; // amount can be 0
+    if (paymentMethod) existingPayment.paymentMethod = paymentMethod;
+    if (paymentType) existingPayment.paymentType = paymentType;
+    if (remarks) existingPayment.remarks = remarks;
+    if (date) existingPayment.date = date;
+
+    await existingPayment.save({ session });
+    console.log("✏️ Payment updated:", existingPayment);
+
+    // 💵 Apply new dueAmount adjustment if new paymentType affects it
+    if (
+      existingPayment.paymentType === "HalfPayment" ||
+      existingPayment.paymentType === "FullPayment" ||
+      existingPayment.paymentType === "Discount"
+    ) {
+      await Site.updateOne(
+        { _id: existingPayment.site },
+        { $inc: { dueAmount: -existingPayment.amount } },
+        { session }
+      );
+      console.log(`🏦 Updated dueAmount by ₹${existingPayment.amount}`);
+    }
+
+    // 🔗 If order exists, recheck paymentDone status
+    if (existingPayment.order) {
+      const orderDoc = await Order.findById(existingPayment.order)
+        .populate("payments")
+        .session(session);
+
+      if (!orderDoc) {
+        throw new Error("Order not found");
+      }
+
+      // 🧮 Recalculate total paid
+      const totalPaid = orderDoc.payments.reduce((acc, pay) => {
+        return acc + (pay.amount || 0);
+      }, 0);
+
+      orderDoc.paymentDone = totalPaid >= orderDoc.totalCostAmount;
+      await orderDoc.save({ session });
+
+      console.log(
+        `💳 Rechecked total paid ₹${totalPaid}, Order total ₹${orderDoc.totalCostAmount}`
+      );
+    }
+
+    await session.commitTransaction();
+    session.endSession();
+
+    console.log("✅ Payment edit transaction committed successfully.");
+    return res.status(200).json({
+      success: true,
+      message: "✅ Payment updated successfully",
+      payment: existingPayment,
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+    console.error("❌ Error editing payment:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong while editing payment.",
+    });
+  }
+};
+

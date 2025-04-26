@@ -15,8 +15,7 @@ const orderSchema = new mongoose.Schema(
     }, // Links order to a customer
     invoiceNo: {
       type: String,
-      required: true,
-      unique: true,
+      required: true, // 🚫 NO unique: true
     }, // Invoice number for the order
     items: [
       {
