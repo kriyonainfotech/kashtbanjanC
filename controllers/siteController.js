@@ -2,6 +2,7 @@ const Site = require("../models/site")
 const Customer = require("../models/customer")
 const mongoose = require("mongoose");
 const Order = require("../models/order");
+const Payment = require("../models/payment");
 
 exports.addSite = async (req, res) => {
   try {
@@ -384,31 +385,42 @@ exports.deleteSite = async (req, res) => {
     }
 
     // 🔍 Step 2: Check if there are pending orders
-    const pendingOrders = await Order.find({
-      site: siteId,
-      $or: [
-        { status: "onrent" }, // Order is still on rent
-        { $expr: { $gt: ["$items.quantity", "$items.returned"] } }, // Some items are not returned
-      ],
-    });
+    // const pendingOrders = await Order.find({
+    //   site: siteId,
+    //   $or: [
+    //     { status: "onrent" }, // Order is still on rent
+    //     { $expr: { $gt: ["$items.quantity", "$items.returned"] } }, // Some items are not returned
+    //   ],
+    // });
 
-    if (pendingOrders.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Cannot delete site! There are pending orders with unreturned items.",
-      });
-    }
+    // if (pendingOrders.length > 0) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message:
+    //       "Cannot delete site! There are pending orders with unreturned items.",
+    //   });
+    // }
 
-    // 🔍 Step 3: Check if there is any due amount
-    if (site.dueAmount > 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Cannot delete site! There is a pending due amount.",
-      });
-    }
+    // // 🔍 Step 3: Check if there is any due amount
+    // if (site.dueAmount > 0) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "Cannot delete site! There is a pending due amount.",
+    //   });
+    // }
 
     // 🗑️ Step 4: Delete the site
+
+    // 🔍 Step 3: Delete all orders associated with this site
+    const deletedOrders = await Order.deleteMany({ site: siteId });
+    console.log(
+      `🗑️ Deleted ${deletedOrders.deletedCount} orders for site ${siteId}`
+    );
+
+    // 🧹 Step 4: Delete all payments linked to this site
+    const deletedPayments = await Payment.deleteMany({ site: siteId });
+    console.log(`🗑️ Deleted ${deletedPayments.deletedCount} payments`);
+
     await Site.findByIdAndDelete(siteId);
 
     res.status(200).json({

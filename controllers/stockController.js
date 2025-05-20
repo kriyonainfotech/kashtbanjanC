@@ -61,6 +61,7 @@ exports.deleteStock = async (req, res) => {
   try {
     const { stockId } = req.body;
     console.log(`🔍 Stock ID: ${stockId}`);
+    console.log(req.body, "req.body-------------------");
 
     if (!stockId) {
       console.log("❌ Stock ID is required");

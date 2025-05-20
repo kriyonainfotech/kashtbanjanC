@@ -9,7 +9,7 @@ const {
 const routes = express.Router();
 
 routes.post("/add", addStock);
-routes.delete("/delete", deleteStock);
+routes.delete("/deletestock", deleteStock);
 routes.post("/edit", editStock);
 routes.post("/bySubcategory", getStockBySubCategory);
 routes.post("/getallstocks", getAllStock);
