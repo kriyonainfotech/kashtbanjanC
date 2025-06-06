@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 
 // API endpoint to generate invoice
-exports.generatePDF = async (req, res) => { 
+exports.generatePDF = async (req, res) => {
   try {
     // Get invoice data from request body
     const invoiceData = req.body;
