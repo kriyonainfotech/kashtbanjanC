@@ -744,26 +744,53 @@ exports.editOrder = async (req, res) => {
     console.log("📦 Original Order Loaded:", order);
 
     // 📊 Create maps for quick lookup: original and updated items by subCategory ID
+    // const originalMap = new Map(order.items.map(item => [item.subCategory._id.toString(), item]));
+    // const updatedMap = new Map(updatedItems.map(item => [item.subCategory, item]));
+    // console.log("🔀 Created maps for original and updated items");
+
+    // // ➕ Detect added items (in updatedMap but not in originalMap)
+    // const addedItems = updatedItems.filter(item => !originalMap.has(item.subCategory));
+    // console.log("➕ Added Items:", addedItems);
+
+    // // ➖ Detect removed items (in originalMap but not in updatedMap)
+    // const removedItems = order.items.filter(item => !updatedMap.has(item.subCategory._id.toString()));
+    // console.log("➖ Removed Items:", removedItems);
+
+    // ✅ Create maps with stringified subCategory IDs
+    // ✅ Create maps using stringified subCategory IDs
     const originalMap = new Map(order.items.map(item => [item.subCategory._id.toString(), item]));
-    const updatedMap = new Map(updatedItems.map(item => [item.subCategory, item]));
-    console.log("🔀 Created maps for original and updated items");
+    const updatedMap = new Map(updatedItems.map(item => [item.subCategory.toString(), item]));
 
-    // ➕ Detect added items (in updatedMap but not in originalMap)
-    const addedItems = updatedItems.filter(item => !originalMap.has(item.subCategory));
-    console.log("➕ Added Items:", addedItems);
-
-    // ➖ Detect removed items (in originalMap but not in updatedMap)
+    const addedItems = updatedItems.filter(item => !originalMap.has(item.subCategory.toString()));
     const removedItems = order.items.filter(item => !updatedMap.has(item.subCategory._id.toString()));
-    console.log("➖ Removed Items:", removedItems);
+
+    console.log("🗺️ Original Map Keys:", [...originalMap.keys()]);
+    console.log("🗺️ Updated Map Keys:", [...updatedMap.keys()]);
 
     // 🔄 Detect quantity changes for items existing in both lists
     const quantityUpdates = [];
     for (const item of updatedItems) {
-      const originalItem = originalMap.get(item.subCategory);
+      // const originalItem = originalMap.get(item.subCategory);
+      // const originalItem = originalMap.get(item.subCategory.toString());
+
+      // if (!originalItem) {
+      //   console.error(`❌ SubCategory ${item.subCategory} not found in original order.`);
+      //   throw new Error(`SubCategory ${item.subCategory} not found in order.`);
+      // }
+
+      const subCategoryId = item.subCategory.toString();
+      const originalItem = originalMap.get(subCategoryId);
 
       if (!originalItem) {
-        console.error(`❌ SubCategory ${item.subCategory} not found in original order.`);
-        throw new Error(`SubCategory ${item.subCategory} not found in order.`);
+        console.warn(`❌ SubCategory ${subCategoryId} not found in original order. ➕ Treating as added item.`);
+        addedItems.push(item); // Add to addedItems if not already
+        order.items.push({
+          subCategory: item.subCategory,
+          quantity: item.quantity,
+          returned: 0,
+          rentedAt: new Date(),
+        });
+        continue;
       }
 
       console.log(`🔍 Checking quantities for SubCategory ${item.subCategory}: updated quantity = ${item.quantity}, original returned = ${originalItem.returned}`);
