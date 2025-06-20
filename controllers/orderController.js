@@ -171,7 +171,7 @@ const syncRentHistory = async (order, session) => {
 
   let rentHistory = await OrderHistory.findOne({
     order: order._id,
-    // actionType: "onrent",
+    actionType: "onrent",
   }).session(session);
 
   if (!rentHistory) {
@@ -187,16 +187,28 @@ const syncRentHistory = async (order, session) => {
       })),
       timestamp: new Date(),
       date: order.orderDate,
-    });
+    })
   } else {
+    // Update existing "onrent" history
+    // Ensure you are updating `items` correctly to reflect the current state of the order
+    // It looks like your existing logic here is trying to do that, but ensure it's robust.
     const updatedMap = new Map();
     order.items.forEach(item => {
+      // It's important here to preserve `returned` and `returnedAt` from the *original*
+      // rentHistory.items if they exist, and only update quantity and rentedAt
+      // based on the current order.
+      const existingHistoryItem = rentHistory.items.find(historyItem =>
+        historyItem.subCategory.toString() === item.subCategory.toString()
+      );
+
       updatedMap.set(item.subCategory.toString(), {
         subCategory: item.subCategory,
         quantity: item.quantity,
-        rentedAt: item.rentedAt,
-        returned: item.returned || 0,
-        returnedAt: item.returnedAt || null,
+        // Preserve original rentedAt if it's an existing item, otherwise use current order's rentedAt
+        rentedAt: existingHistoryItem ? existingHistoryItem.rentedAt : item.rentedAt,
+        // Preserve original returned and returnedAt from history
+        returned: existingHistoryItem ? existingHistoryItem.returned : (item.returned || 0),
+        returnedAt: existingHistoryItem ? existingHistoryItem.returnedAt : (item.returnedAt || null),
       });
     });
 
@@ -204,6 +216,23 @@ const syncRentHistory = async (order, session) => {
     rentHistory.timestamp = new Date();
     rentHistory.date = order.orderDate;
   }
+
+  // } else {
+  //   const updatedMap = new Map();
+  //   order.items.forEach(item => {
+  //     updatedMap.set(item.subCategory.toString(), {
+  //       subCategory: item.subCategory,
+  //       quantity: item.quantity,
+  //       rentedAt: item.rentedAt,
+  //       returned: item.returned || 0,
+  //       returnedAt: item.returnedAt || null,
+  //     });
+  //   });
+
+  //   rentHistory.items = Array.from(updatedMap.values());
+  //   rentHistory.timestamp = new Date();
+  //   rentHistory.date = order.orderDate;
+  // }
 
   await rentHistory.save({ session });
 
