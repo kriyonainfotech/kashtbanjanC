@@ -5,114 +5,6 @@ const Stock = require("../models/stock");
 const OrderHistory = require("../models/orderHistory");
 const Site = require("../models/site");
 
-// exports.addOrderItems = async (req, res) => {
-//   const session = await mongoose.startSession();
-//   session.startTransaction(); // 🔄 Begin transaction
-
-//   try {
-//     console.log("🛒 Received Order Request:", req.body);
-
-//     const { customer, site, items } = req.body;
-
-//     // 🛑 Validate request data
-//     if (!customer || !site || !Array.isArray(items) || items.length === 0) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Invalid order data. Customer, site, and items are required.",
-//       });
-//     }
-
-//     // Step 1: Check stock availability for all items **before modifying stock**
-//     let totalOrderAmount = 0; // 🆕 Track total amount of this order
-//     const stockUpdates = [];
-//     const stockMap = new Map();
-
-//     for (let item of items) {
-//       let stock = stockMap.get(item.subCategory);
-
-//       if (!stock) {
-//         stock = await Stock.findOne({ subCategory: item.subCategory })
-//           .populate("subCategory", "rentalRate") // ✅ Fetch rentalRate
-//           .session(session);
-//         if (!stock) {
-//           await session.abortTransaction();
-//           session.endSession();
-//           return res.status(400).json({
-//             success: false,
-//             message: `Stock not found for subCategory: ${item.subCategory}`,
-//           });
-//         }
-//         stockMap.set(item.subCategory, stock);
-//       }
-
-//       // 🛑 Check if available stock is enough
-//       if (stock.availableStock < item.quantity) {
-//         await session.abortTransaction();
-//         session.endSession();
-//         return res.status(400).json({
-//           success: false,
-//           message: `Insufficient stock for subCategory: ${item.subCategory}. Available: ${stock.availableStock}, Required: ${item.quantity}`,
-//         });
-//       }
-
-//       // Prepare stock deduction update
-//       stock.availableStock -= item.quantity;
-//       stock.OnRent = (stock.OnRent || 0) + item.quantity;
-//       stockUpdates.push(stock);
-//     }
-
-//     // Step 2: Apply stock deductions inside the transaction
-//     for (let stock of stockUpdates) {
-//       await stock.save({ session }); // 🔄 Save within transaction
-//     }
-
-//     // Step 3: Create order within transaction
-//     const order = new Order({ customer, site, items });
-//     await order.save({ session });
-
-//     // Step 4: Update site history
-//     await Site.updateOne(
-//       { _id: site },
-//       {
-//         $push: {
-//           history: {
-//             actionType: "rent",
-//             order: order._id,
-//             customer: order.customer,
-//             details: {
-//               items: order.items.map((item) => ({
-//                 subCategory: item.subCategory,
-//                 availableStock: item.quantity,
-//               })),
-//             },
-//           },
-//         },
-//       },
-//       { session }
-//     );
-
-//     // ✅ Commit transaction
-//     await session.commitTransaction();
-//     session.endSession();
-
-//     console.log("🎉 Order successfully created:", order._id);
-//     res.status(201).json({
-//       success: true,
-//       message: "✅ Order added successfully!",
-//       order,
-//     });
-//   } catch (error) {
-//     await session.abortTransaction(); // 🚨 Rollback if error occurs
-//     session.endSession();
-
-//     console.error("❌ Error creating order:", error);
-//     res.status(500).json({
-//       success: false,
-//       message: "Something went wrong. Please try again.",
-//     });
-//   }
-// };
-
 exports.addOrderItems = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction(); // 🔄 Begin transaction
@@ -223,7 +115,7 @@ exports.addOrderItems = async (req, res) => {
 
     // 🔥 Create separate OrderHistory record
     const history = new OrderHistory({
-      actionType: "rent",
+      actionType: "onrent",
       order: order._id,
       items: items.map((item) => ({
         subCategory: item.subCategory,
@@ -272,452 +164,116 @@ exports.addOrderItems = async (req, res) => {
   }
 };
 
-// exports.editOrder = async (req, res) => {
-//   console.log("🔄 Editing Order:", req.body);
-//   const session = await mongoose.startSession();
-//   session.startTransaction();
-
-//   try {
-//     const { orderId, updatedItems, updatedOrderDate } = req.body;
-
-//     console.log("📝 Request to edit order received:", {
-//       orderId,
-//       updatedItems,
-//     });
-
-//     if (!orderId || !Array.isArray(updatedItems) || updatedItems.length === 0) {
-//       console.log("⚠️ Missing required fields.");
-//       return res.status(400).json({
-//         success: false,
-//         message: "Order ID and updated items are required.",
-//       });
-//     }
-
-//     const order = await Order.findById(orderId)
-//       .populate("items.subCategory")
-//       .session(session);
-
-//     if (!order) {
-//       console.log("❌ Order not found:", orderId);
-//       await session.abortTransaction();
-//       session.endSession();
-//       return res
-//         .status(404)
-//         .json({ success: false, message: "Order not found." });
-//     }
-
-//     console.log("📦 Existing order fetched:", order._id);
-
-//     const originalItems = order.items.map((item) => ({
-//       subCategory: item.subCategory._id.toString(),
-//       quantity: item.quantity,
-//     }));
-
-//     const originalMap = new Map();
-//     for (let item of originalItems) {
-//       originalMap.set(item.subCategory, item);
-//     }
-
-//     const updatedMap = new Map();
-//     for (let item of updatedItems) {
-//       updatedMap.set(item.subCategory, item);
-//     }
-
-//     console.log("🔍 Comparing updated items...");
-//     const addedItems = [];
-//     const removedItems = [];
-//     const quantityUpdatedItems = [];
-
-//     for (let [subCategoryId, updatedItem] of updatedMap.entries()) {
-//       const originalItem = originalMap.get(subCategoryId);
-//       if (!originalItem) {
-//         addedItems.push(updatedItem);
-//       } else if (originalItem.quantity !== updatedItem.quantity) {
-//         quantityUpdatedItems.push({
-//           ...updatedItem,
-//           previousQuantity: originalItem.quantity,
-//         });
-//       }
-//     }
-
-//     for (let [subCategoryId, originalItem] of originalMap.entries()) {
-//       if (!updatedMap.has(subCategoryId)) {
-//         removedItems.push(originalItem);
-//       }
-//     }
-
-//     console.log("➕ Added Items:", addedItems);
-//     console.log("✏️ Quantity Updated Items:", quantityUpdatedItems);
-//     console.log("➖ Removed Items:", removedItems);
-
-//     let newTotalCost = 0;
-
-//     console.log("📥 Processing added & updated items...");
-//     for (let item of addedItems) {
-//       const stock = await Stock.findOne({ subCategory: item.subCategory })
-//         .populate("subCategory", "rentalRate")
-//         .session(session);
-
-//       const requiredQty = item.quantity;
-//       if (stock.availableStock < requiredQty) {
-//         await session.abortTransaction();
-//         session.endSession();
-//         return res.status(400).json({
-//           success: false,
-//           message: `Insufficient stock for subCategory: ${item.subCategory}. Available: ${stock.availableStock}, Required: ${requiredQty}`,
-//         });
-//       }
-
-//       stock.availableStock -= requiredQty;
-//       stock.OnRent += requiredQty;
-//       await stock.save({ session });
-
-//       // const rentalRate = stock.subCategory.rentalRate;
-//       // newTotalCost += rentalRate * item.quantity;
-
-//       item.rentedAt = item.rentedAt
-//         ? new Date(item.rentedAt)
-//         : moment(updatedOrderDate.split(".")[0], "YYYY-MM-DD HH:mm:ss").toDate();
-//     }
-
-//     for (let item of quantityUpdatedItems) {
-//       const stock = await Stock.findOne({ subCategory: item.subCategory })
-//         .populate("subCategory", "rentalRate")
-//         .session(session);
-//       console.log("📦 Stock found:", stock);
-
-//       const diff = item.quantity - item.previousQuantity;
-
-//       if (diff > 0) {
-//         // 🟢 More quantity added
-//         console.log("🟢 Quantity increased:", diff);
-//         if (stock.availableStock < diff) {
-//           await session.abortTransaction();
-//           session.endSession();
-//           console.log(
-//             `❌ Insufficient stock to increase quantity for ${item.subCategory}: required ${diff}, available ${stock.availableStock}`
-//           );
-//           return res.status(400).json({
-//             success: false,
-//             message: `Insufficient stock to increase quantity for subCategory: ${item.subCategory}. Available: ${stock.availableStock}, Required: ${diff}`,
-//           });
-//         }
-
-//         stock.availableStock -= diff;
-//         stock.OnRent += diff;
-//       } else if (diff < 0) {
-//         // 🔴 Quantity reduced (return some stock)
-//         console.log("🔴 Quantity reduced:", diff);
-//         const returnQty = Math.abs(diff);
-//         if (stock.OnRent < returnQty) {
-//           await session.abortTransaction();
-//           session.endSession();
-//           console.log(
-//             `❌ Trying to return more than on rent for ${item.subCategory}: OnRent ${stock.OnRent}, trying to return ${returnQty}`
-//           );
-//           return res.status(400).json({
-//             success: false,
-//             message: `Invalid quantity reduction for subCategory: ${item.subCategory}. OnRent: ${stock.OnRent}, Trying to return: ${returnQty}`,
-//           });
-//         }
-
-//         stock.availableStock += returnQty;
-//         stock.OnRent -= returnQty;
-//       }
-
-//       await stock.save({ session });
-
-//       console.log("📦 Stock updated:", stock);
-
-//       item.rentedAt = moment(
-//         updatedOrderDate.split(".")[0],
-//         "YYYY-MM-DD HH:mm:ss"
-//       ).toDate();
-//     }
-
-//     console.log("📤 Processing removed items...");
-
-//     for (let item of removedItems) {
-//       console.log("🛑 [REMOVED ITEM DETECTED]");
-//       console.log(`🔍 SubCategory ID: ${item.subCategory}`);
-//       console.log(`📦 Quantity to return: ${item.quantity}`);
-
-//       const stock = await Stock.findOne({
-//         subCategory: item.subCategory,
-//       }).session(session);
-//       console.log("📦 Stock found:", stock);
-
-//       if (!stock) {
-//         console.log("❌ Stock not found for subCategory:", item.subCategory);
-//         await session.abortTransaction();
-//         session.endSession();
-//         return res.status(404).json({
-//           success: false,
-//           message: "Stock not found for removed item.",
-//         });
-//       }
-
-//       console.log(
-//         `📊 Before Update => availableStock: ${stock.availableStock}, OnRent: ${stock.OnRent}`
-//       );
-
-//       // Safety check to avoid negative OnRent
-//       if (stock.OnRent < item.quantity) {
-//         console.log("🚫 Error: Trying to return more than on rent");
-//         await session.abortTransaction();
-//         session.endSession();
-//         return res.status(400).json({
-//           success: false,
-//           message: `Invalid return quantity for subCategory: ${item.subCategory}. OnRent: ${stock.OnRent}, Attempted to return: ${item.quantity}`,
-//         });
-//       }
-
-//       stock.availableStock += item.quantity;
-//       stock.OnRent -= item.quantity;
-
-//       console.log(
-//         `✅ Updated => availableStock: ${stock.availableStock}, OnRent: ${stock.OnRent}`
-//       );
-
-//       await stock.save({ session });
-
-//       const subCat = await mongoose
-//         .model("SubCategory")
-//         .findById(item.subCategory);
-//     }
-
-//     console.log("🧾 Updating order...");
-//     order.items = updatedItems.map((item) => ({
-//       subCategory: item.subCategory,
-//       quantity: item.quantity,
-//       rentedAt: item.rentedAt,
-//       returned: 0,
-//     }));
-
-//     for (const item of order.items) {
-//       // Debugging: Log the item being processed
-//       console.log("Processing item:", item);
-
-//       // Find the stock for the current subCategory
-//       const stock = await Stock.findOne({
-//         subCategory: item.subCategory, // Ensure correct field for `subCategory`
-//       }).populate("subCategory", "rentalRate");
-
-//       // Debugging: Log the stock information
-//       console.log("Stock found:", stock);
-
-//       // Check if stock or subCategory is missing
-//       if (!stock || !stock.subCategory) {
-//         console.log(
-//           "❌ Stock or subCategory not found for item:",
-//           item.subCategory
-//         );
-//         continue;
-//       }
-
-//       // Get the rental rate and calculate the cost
-//       const rentalRate = stock.subCategory.rentalRate;
-//       console.log("Rental rate for subCategory:", rentalRate);
-
-//       // Update total cost with the rental rate * quantity
-//       newTotalCost += rentalRate * item.quantity;
-
-//       // Debugging: Log the running total cost
-//       console.log("Updated total cost:", newTotalCost);
-//     }
-
-//     console.log("Final total cost:", newTotalCost);
-
-//     order.totalCostAmount = newTotalCost;
-//     order.orderDate = moment(
-//       updatedOrderDate.split(".")[0],
-//       "YYYY-MM-DD HH:mm:ss"
-//     ).toDate();
-//     await order.save({ session });
-
-//     console.log("📚 Updating order history...");
-//     await OrderHistory.deleteMany({
-//       order: orderId,
-//       actionType: "rent",
-//     }).session(session);
-
-//     const rentHistory = new OrderHistory({
-//       actionType: "rent",
-//       order: order._id,
-//       items: addedItems.concat(quantityUpdatedItems).map((item) => ({
-//         subCategory: item.subCategory,
-//         quantity: item.quantity,
-//         rentedAt: item.rentedAt,
-//         returned: 0,
-//       })),
-//       timestamp: new Date(),
-//     });
-//     await rentHistory.save({ session });
-
-//     const returnHistory = new OrderHistory({
-//       actionType: "return",
-//       order: order._id,
-//       items: removedItems.map((item) => ({
-//         subCategory: item.subCategory,
-//         quantity: item.quantity,
-//         returned: item.quantity,
-//         returnedAt: new Date(),
-//       })),
-//       timestamp: new Date(),
-//     });
-//     await returnHistory.save({ session });
-
-//     order.orderHistory = [rentHistory._id, returnHistory._id];
-//     await order.save({ session });
-
-//     console.log("📍 Updating due amount for site...");
-//     await Site.updateOne(
-//       { _id: order.site },
-//       { $set: { dueAmount: newTotalCost } },
-//       { session }
-//     );
-
-//     await session.commitTransaction();
-//     session.endSession();
-
-//     console.log("✅ Order updated successfully:", order._id);
-//     res.status(200).json({
-//       success: true,
-//       message: "✅ Order updated successfully",
-//       order,
-//     });
-//   } catch (err) {
-//     await session.abortTransaction();
-//     session.endSession();
-//     console.error("❌ Error editing order:", err);
-//     res.status(500).json({ success: false, message: "Something went wrong." });
-//   }
-//   // --------------------------------------------------------------- new
-//   // try {
-//   //   const { orderId, updatedOrderDate, updatedItems } = req.body;
-
-//   //   if (!orderId || !updatedItems || !Array.isArray(updatedItems)) {
-//   //     return res.status(400).json({
-//   //       success: false,
-//   //       message: "Order ID and updated items are required.",
-//   //     });
-//   //   }
-
-//   //   // Format items for mongoose model (dates and fields)
-//   //   const formattedItems = updatedItems.map((item) => ({
-//   //     subCategory: item.subCategory,
-//   //     quantity: item.quantity,
-//   //     rentedAt: new Date(item.rentedAt),
-//   //     returnedAt: item.returnedAt ? new Date(item.returnedAt) : undefined,
-//   //     returned: item.returned // ✅ Important for schema default
-//   //   }));
-
-
-//   //   // Push items to existing order
-//   //   const updatedOrder = await Order.findByIdAndUpdate(
-//   //     orderId,
-//   //     {
-//   //       $push: {
-//   //         items: { $each: formattedItems },
-//   //       },
-//   //       orderDate: new Date(updatedOrderDate),
-//   //     },
-//   //     { new: true }
-//   //   );
-
-//   //   if (!updatedOrder) {
-//   //     return res.status(404).json({
-//   //       success: false,
-//   //       message: "Order not found.",
-//   //     });
-//   //   }
-
-//   //   res.status(200).json({
-//   //     success: true,
-//   //     message: "Order updated successfully.",
-//   //     data: updatedOrder,
-//   //   });
-//   // } catch (err) {
-//   //   console.error("Edit order error:", err);
-//   //   res.status(500).json({
-//   //     success: false,
-//   //     message: "Server error while updating order.",
-//   //   });
-//   // }
-
-//   // new 2 --------------------------------------------------------------
-//   // try {
-//   //   const { orderId, updatedOrderDate, updatedItems } = req.body;
-
-//   //   if (!orderId || !updatedItems || !Array.isArray(updatedItems)) {
-//   //     return res.status(400).json({
-//   //       success: false,
-//   //       message: "Order ID and updated items are required.",
-//   //     });
-//   //   }
-
-//   //   for (const item of updatedItems) {
-//   //     // Try to update an existing item by subCategory
-//   //     const updateResult = await Order.updateOne(
-//   //       {
-//   //         _id: orderId,
-//   //         "items.subCategory": item.subCategory,
-//   //       },
-//   //       {
-//   //         $set: {
-//   //           ...(item.rentedAt && { "items.$.rentedAt": new Date(item.rentedAt) }),
-//   //           ...(item.returnedAt && { "items.$.returnedAt": new Date(item.returnedAt) }),
-//   //           ...(item.quantity !== undefined && { "items.$.quantity": item.quantity }),
-//   //           ...(item.returned !== undefined && { "items.$.returned": item.returned }),
-//   //         },
-//   //       }
-//   //     );
-
-//   //     // If no existing item matched, push it as new
-//   //     if (updateResult.modifiedCount === 0) {
-//   //       await Order.findByIdAndUpdate(orderId, {
-//   //         $push: {
-//   //           items: {
-//   //             subCategory: item.subCategory,
-//   //             quantity: item.quantity || 0,
-//   //             returned: item.returned || 0,
-//   //             rentedAt: item.rentedAt ? new Date(item.rentedAt) : undefined,
-//   //             returnedAt: item.returnedAt ? new Date(item.returnedAt) : undefined,
-//   //           },
-//   //         },
-//   //       });
-//   //     }
-//   //   }
-
-//   //   // Optionally update orderDate if sent
-//   //   if (updatedOrderDate) {
-//   //     await Order.findByIdAndUpdate(orderId, {
-//   //       orderDate: new Date(updatedOrderDate),
-//   //     });
-//   //   }
-
-//   //   const updatedOrder = await Order.findById(orderId);
-
-//   //   if (!updatedOrder) {
-//   //     return res.status(404).json({
-//   //       success: false,
-//   //       message: "Order not found.",
-//   //     });
-//   //   }
-
-//   //   res.status(200).json({
-//   //     success: true,
-//   //     message: "Order updated successfully.",
-//   //     data: updatedOrder,
-//   //   });
-//   // } catch (err) {
-//   //   console.error("Edit order error:", err);
-//   //   res.status(500).json({
-//   //     success: false,
-//   //     message: "Server error while updating order.",
-//   //   });
-//   // }
-// };
+const syncRentHistory = async (order, session) => {
+  if (!order || !order._id || !Array.isArray(order.items)) {
+    throw new Error("Invalid order data passed to syncRentHistory");
+  }
+
+  let rentHistory = await OrderHistory.findOne({
+    order: order._id,
+    // actionType: "onrent",
+  }).session(session);
+
+  if (!rentHistory) {
+    rentHistory = new OrderHistory({
+      order: order._id,
+      actionType: "onrent",
+      items: order.items.map(i => ({
+        subCategory: i.subCategory,
+        quantity: i.quantity,
+        rentedAt: i.rentedAt,
+        returned: i.returned || 0,
+        returnedAt: i.returnedAt || null,
+      })),
+      timestamp: new Date(),
+      date: order.orderDate,
+    });
+  } else {
+    const updatedMap = new Map();
+    order.items.forEach(item => {
+      updatedMap.set(item.subCategory.toString(), {
+        subCategory: item.subCategory,
+        quantity: item.quantity,
+        rentedAt: item.rentedAt,
+        returned: item.returned || 0,
+        returnedAt: item.returnedAt || null,
+      });
+    });
+
+    rentHistory.items = Array.from(updatedMap.values());
+    rentHistory.timestamp = new Date();
+    rentHistory.date = order.orderDate;
+  }
+
+  await rentHistory.save({ session });
+
+  // 🔗 Make sure order has this history ID linked
+  if (!order.orderHistory.includes(rentHistory._id)) {
+    order.orderHistory.push(rentHistory._id);
+    await order.save({ session });
+  }
+};
+
+const syncReturnHistory = async (order, returnItems, session) => {
+  if (!order || !order._id || !Array.isArray(returnItems)) {
+    throw new Error("Invalid order/returnItems data for return history sync");
+  }
+
+  let returnHistory = await OrderHistory.findOne({
+    order: order._id,
+    actionType: "return",
+  }).session(session);
+
+  const itemMap = new Map();
+
+  if (returnHistory) {
+    // Step 1: Load existing return items
+    returnHistory.items.forEach((item) => {
+      itemMap.set(item.subCategory.toString(), { ...item._doc });
+    });
+
+    // Step 2: Merge new return items
+    for (let newItem of returnItems) {
+      const id = newItem.subCategory.toString();
+      if (itemMap.has(id)) {
+        const existing = itemMap.get(id);
+        existing.returned += newItem.returned;
+        existing.returnedAt = newItem.returnedAt || new Date();
+      } else {
+        itemMap.set(id, {
+          ...newItem,
+          returned: newItem.returned || 0,
+          returnedAt: newItem.returnedAt || new Date(),
+        });
+      }
+    }
+
+    returnHistory.items = Array.from(itemMap.values());
+    returnHistory.timestamp = new Date();
+  } else {
+    // No history? Create fresh
+    returnHistory = new OrderHistory({
+      order: order._id,
+      actionType: "return",
+      items: returnItems.map(item => ({
+        subCategory: item.subCategory,
+        quantity: item.quantity,
+        rentedAt: item.rentedAt,
+        returned: item.returned || 0,
+        returnedAt: item.returnedAt || new Date(),
+      })),
+      timestamp: new Date(),
+    });
+  }
+
+  await returnHistory.save({ session });
+
+  // Link to order if not already
+  if (!order.orderHistory.includes(returnHistory._id)) {
+    order.orderHistory.push(returnHistory._id);
+    await order.save({ session });
+  }
+};
 
 exports.editOrder = async (req, res) => {
   console.log("🔄 Starting Edit Order API");
@@ -743,21 +299,6 @@ exports.editOrder = async (req, res) => {
     }
     console.log("📦 Original Order Loaded:", order);
 
-    // 📊 Create maps for quick lookup: original and updated items by subCategory ID
-    // const originalMap = new Map(order.items.map(item => [item.subCategory._id.toString(), item]));
-    // const updatedMap = new Map(updatedItems.map(item => [item.subCategory, item]));
-    // console.log("🔀 Created maps for original and updated items");
-
-    // // ➕ Detect added items (in updatedMap but not in originalMap)
-    // const addedItems = updatedItems.filter(item => !originalMap.has(item.subCategory));
-    // console.log("➕ Added Items:", addedItems);
-
-    // // ➖ Detect removed items (in originalMap but not in updatedMap)
-    // const removedItems = order.items.filter(item => !updatedMap.has(item.subCategory._id.toString()));
-    // console.log("➖ Removed Items:", removedItems);
-
-    // ✅ Create maps with stringified subCategory IDs
-    // ✅ Create maps using stringified subCategory IDs
     const originalMap = new Map(order.items.map(item => [item.subCategory._id.toString(), item]));
     const updatedMap = new Map(updatedItems.map(item => [item.subCategory.toString(), item]));
 
@@ -770,13 +311,6 @@ exports.editOrder = async (req, res) => {
     // 🔄 Detect quantity changes for items existing in both lists
     const quantityUpdates = [];
     for (const item of updatedItems) {
-      // const originalItem = originalMap.get(item.subCategory);
-      // const originalItem = originalMap.get(item.subCategory.toString());
-
-      // if (!originalItem) {
-      //   console.error(`❌ SubCategory ${item.subCategory} not found in original order.`);
-      //   throw new Error(`SubCategory ${item.subCategory} not found in order.`);
-      // }
 
       const subCategoryId = item.subCategory.toString();
       const originalItem = originalMap.get(subCategoryId);
@@ -812,10 +346,6 @@ exports.editOrder = async (req, res) => {
           newQty: item.quantity
         });
       }
-
-      // if (originalItem && item.quantity !== originalItem.quantity) {
-      //   quantityUpdates.push({ subCategory: item.subCategory, oldQty: originalItem.quantity, newQty: item.quantity });
-      // }
     }
     console.log("🔄 Quantity Updates:", quantityUpdates);
 
@@ -883,14 +413,6 @@ exports.editOrder = async (req, res) => {
       await stock.save({ session });
       console.log(`✅ Stock updated for removed item ${stock.subCategory.name}: Available - ${stock.availableStock}, OnRent - ${stock.OnRent}`);
     }
-
-    // 🔁 Replace order items with updated items
-    // order.items = updatedItems.map(item => ({
-    //   subCategory: item.subCategory,
-    //   quantity: item.quantity,
-    //   returned: originalItem ? originalItem.returned : 0, // preserve original returned value
-    //   rentedAt: item.rentedAt || new Date(), // keep rentedAt if present, else set now
-    // }));
     order.items = updatedItems.map(item => {
       const originalItem = originalMap.get(item.subCategory);
 
@@ -909,14 +431,15 @@ exports.editOrder = async (req, res) => {
 
 
     // Check if order status needs to change back to "onrent"
-    if (order.status === "returned") {
-      const anyQuantityGreaterThanReturned = order.items.some(
-        item => item.quantity > item.returned
-      );
-      if (anyQuantityGreaterThanReturned) {
-        console.log("⚠️ Order status changed from 'returned' to 'onrent' due to quantity > returned");
-        order.status = "onrent";
-      }
+    const allReturned = order.items.every(item => item.quantity === item.returned);
+    const somePending = order.items.some(item => item.quantity > item.returned);
+
+    if (allReturned && order.status !== "returned") {
+      console.log("✅ All items returned. Changing order status to 'returned'");
+      order.status = "returned";
+    } else if (somePending && order.status === "returned") {
+      console.log("⚠️ Items still pending return. Changing order status to 'onrent'");
+      order.status = "onrent";
     }
 
     // 💰 Recalculate total cost amount
@@ -938,24 +461,7 @@ exports.editOrder = async (req, res) => {
     await order.save({ session });
     console.log("✅ Order document saved successfully");
 
-    // 📝 Update order history - delete old rent history and insert new
-    await OrderHistory.deleteMany({ order: orderId, actionType: "rent" }).session(session);
-    await new OrderHistory({
-      order: orderId,
-      actionType: "rent",
-      items: order.items,
-      date: order.orderDate,
-    }).save({ session });
-    console.log("📝 Rent history updated");
-
-    // 📝 Add return action in history with zero returned (for now)
-    await new OrderHistory({
-      order: orderId,
-      actionType: "return",
-      items: order.items.map(item => ({ ...item.toObject(), returned: 0 })),
-      date: order.orderDate,
-    }).save({ session });
-    console.log("📝 Return history initialized");
+    await syncRentHistory(order, session);
 
     // 💳 Update site due amount based on new total cost
     await Site.updateOne(
@@ -979,7 +485,6 @@ exports.editOrder = async (req, res) => {
     res.status(500).json({ success: false, message: error.message || "Internal server error" });
   }
 };
-
 
 exports.returnOrderItems = async (req, res) => {
   const session = await mongoose.startSession();
@@ -1091,18 +596,7 @@ exports.returnOrderItems = async (req, res) => {
     order.totalCostAmount -= totalReturnCost;
     await order.save({ session });
 
-    // 🧾 Record in OrderHistory
-    await OrderHistory.create(
-      [
-        {
-          actionType: "return",
-          order: order._id,
-          items: historyItems,
-          timestamp: new Date(),
-        },
-      ],
-      { session }
-    );
+    await syncReturnHistory(order, historyItems, session);
 
     // 💰 Update site's dueAmount
     await Site.updateOne(
@@ -1174,73 +668,6 @@ exports.getCustomerRentedItems = async (req, res) => {
     });
   }
 };
-
-// exports.getSubcategoriesOnRentBySite = async (req, res) => {
-//   try {
-//     console.log("📝 [GET SUBCATEGORIES ON RENT BY SITE] API hit");
-
-//     const { siteId } = req.body;
-
-//     console.log("Site ID:", siteId);
-
-//     if (!siteId) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Site ID is required",
-//       });
-//     }
-
-//     // Find all orders for the given site that are on rent
-//     const orders = await Order.find({ site: siteId, status: "onrent" })
-//       .populate("items.subCategory", "name")
-//       .lean();
-
-//     if (!orders.length) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "No orders found for this site or no items on rent",
-//       });
-//     }
-//     console.log("Orders fetched");
-
-//     // Collect subcategories and quantities
-//     const subCategoryMap = new Map();
-
-//     orders.forEach((order) => {
-//       order.items.forEach((item) => {
-//         const subCategoryId = item.subCategory._id.toString();
-//         const subCategoryName = item.subCategory.name;
-//         const qtyOnRent = item.quantity - item.returned;
-
-//         if (subCategoryMap.has(subCategoryId)) {
-//           subCategoryMap.get(subCategoryId).qtyOnRent += qtyOnRent;
-//         } else {
-//           subCategoryMap.set(subCategoryId, {
-//             subCategoryId,
-//             subCategoryName,
-//             qtyOnRent,
-//           });
-//         }
-//       });
-//     });
-
-//     const subCategoriesOnRent = Array.from(subCategoryMap.values());
-//     console.log("✅ Subcategories on rent fetched successfully!");
-
-//     res.status(200).json({
-//       success: true,
-//       message: "✅ Subcategories on rent fetched successfully!",
-//       data: subCategoriesOnRent,
-//     });
-//   } catch (error) {
-//     console.error("❌ [Error] Fetching subcategories on rent:", error);
-//     res.status(500).json({
-//       success: false,
-//       message: "Internal Server Error",
-//       error: error.message,
-//     });
-//   }
-// };
 
 exports.getSubcategoriesOnRentByOrder = async (req, res) => {
   try {
@@ -1526,7 +953,8 @@ exports.getReturnedOrderItems = async (req, res) => {
       })
     );
 
-    console.log(`✅ Orders with returned items: ${ordersWithHistory.length}`);
+    console.log("✅ Orders with returned items:", JSON.stringify(ordersWithHistory, null, 2));
+
     res.status(200).json({
       success: true,
       message: "✅ Orders with returned items fetched successfully!",
@@ -1645,7 +1073,7 @@ exports.getOrderHistory = async (req, res) => {
 
     const rentHistory = await OrderHistory.find({
       order: orderId,
-      actionType: "rent",
+      actionType: "onrent",
     })
       .populate("items.subCategory", "name")
       .sort({ timestamp: 1 }) // oldest to newest

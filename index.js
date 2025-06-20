@@ -17,6 +17,10 @@ app.get("/", (req, res) => {
   res.send("Welcome to the API 🚀");
 });
 
+// const { fixOrderHistoriesForSite } = require("./controllers/fixOrderHistories");
+
+// fixOrderHistoriesForSite("6853e6bfb0c6aac7a56f342e");
+
 // Start Server
 const PORT = 8000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
